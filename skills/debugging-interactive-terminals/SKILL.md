@@ -130,9 +130,11 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    shows a **trust dialog** ("Do you trust the files in this folder?") — Enter through it
    before expecting the real first screen. Then `--quiet-ms 800` for the first paint →
    `screen --runs`/`--element-at` to locate the input → `--type` message + Enter →
-   after the answer starts streaming, wait for its end with `--quiet-ms 1500` (streamed
-   text bursts leave >1s gaps; anchor `--until` on the streaming indicator first so the
-   thinking phase can't false-settle) → `Escape` (`--key Escape`) interrupts
+   after the answer starts streaming, wait for its end with `--quiet-ms 1500` (anchor
+   `--until 'streaming'` first — that word is in codebuddy's status line while text
+   streams, and distinguishes it from the `preparing`/`waiting for model` phases; the
+   rewind menu's checkpoint rows contain `ago` if you need an anchor there) → `Escape`
+   (`--key Escape`) interrupts
    (`└ Interrupted by user`); double-ESC opens the rewind/resume menu — **two separate
    `send --key Escape` calls ~0.2s apart** (faster or slower won't trigger it; its live
    "N s ago" timestamps repaint every second — wait with `--until` anchors, not quiet).
