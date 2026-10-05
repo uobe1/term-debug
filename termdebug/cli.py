@@ -91,8 +91,29 @@ def cmd_send(args) -> int:
     state["last_send_offset"] = offset
     writer.state = state
     writer.save_state()
-    print(json.dumps({"ok": True, "sent": events, "offset": offset},
-                     ensure_ascii=False))
+    result = {"ok": True, "sent": events, "offset": offset}
+    sent_text = "".join(args.type or [])
+    if sent_text and tdinput.echo_broken(target.session, offset, sent_text):
+        result["warning"] = "tty-echo-broken"
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_fix_tty(args) -> int:
+    target = resolve_target(args.name)
+    state = records.read_state(target.session)
+    writer = records.V2Writer(target.session)
+    offset = writer.size()
+    # C-u clears whatever half-typed line is sitting in the shell buffer,
+    # so "stty sane" can never glue onto leftover input. Order matters:
+    # clear first, then type the command, then Enter.
+    events = tdinput.send(target, [], ["C-u"], [])
+    events += tdinput.send(target, ["stty sane"], ["Enter"], [])
+    writer.append("i", events)
+    state["last_send_offset"] = offset
+    writer.state = state
+    writer.save_state()
+    print(json.dumps({"ok": True, "fixed": "stty sane"}, ensure_ascii=False))
     return 0
 
 
@@ -290,8 +311,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("y", type=int, help="row, 1-based")
     p.set_defaults(func=cmd_click)
 
-    for name in ("sessions", "trace",
-                 "fix-tty", "screenshot"):
+    p = sub.add_parser("fix-tty", help="restore sane terminal settings (stty sane)")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.set_defaults(func=cmd_fix_tty)
+
+    for name in ("sessions", "trace", "screenshot"):
         # Real options are added as each subcommand gets implemented.
         p = sub.add_parser(name, help=name)
         p.add_argument("args", nargs="*", help=argparse.SUPPRESS)

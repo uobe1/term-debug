@@ -4,8 +4,9 @@ Red line (design section 5): `-l` text and key names must never be mixed in
 one send-keys invocation — mixing them silently drops keys.
 """
 import re
+import time
 
-from termdebug import tmuxio
+from termdebug import records, tmuxio
 from termdebug.errors import TDError
 
 # Key names accepted by send --key (tmux KEYC names). Raw bytes go through
@@ -57,6 +58,23 @@ def click(target: tmuxio.Target, x: int, y: int) -> None:
     """Click at 1-based screen coordinates: inject press+release SGR pair."""
     seq = mouse_encode(0, x - 1, y - 1, True) + mouse_encode(0, x - 1, y - 1, False)
     _run_or_die(target, ["-l", seq], f"click {x},{y}")
+
+
+def echo_broken(session: str, offset: int, text: str, window: float = 1.0) -> bool:
+    """True if the typed text produced no echo bytes within the window.
+
+    A heuristic warning only: programs may legitimately disable ECHO
+    (password prompts, line editors), so this never escalates to an error.
+    """
+    probe = text[-8:]
+    if not probe:
+        return False
+    deadline = time.monotonic() + window
+    while time.monotonic() < deadline:
+        if probe in records.stream_since(session, offset):
+            return False
+        time.sleep(0.05)
+    return True
 
 
 def send(target: tmuxio.Target, text: list[str], keys: list[str],
