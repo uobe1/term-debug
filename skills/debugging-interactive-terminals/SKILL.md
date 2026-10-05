@@ -70,8 +70,13 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   `--until` self-heals (matches rstripped text + a sentinel space) — trust it, and never
   invent regexes that require trailing spaces to survive.
 - **Echo-anchored waits are untrustworthy**: you see your own typed text on screen.
-  Anchor on *output markers* (the program's response), not on what you sent, or use
-  `--cmd-done` (fact) instead.
+  `wait --until` detects this automatically — if the matched text is a substring of what
+  you last sent, the verdict is flagged `echo_suspect: true` and confidence drops to
+  `heuristic`. **Never put the marker you wait for inside your sent text**; if the program
+  would echo it identically, split the string at runtime (e.g. `print('OUT_' + '42')`).
+  Anchoring on *program output* (not echoed text) or using `--cmd-done` (fact) is stronger.
+  Leftover echoes from earlier experiments can also pollute later waits — use a fresh
+  session for sensitive experiments.
 - **Spinners defeat quiet**: an animated line changes every 150 ms but a slow device can
   sample identical frames ~600 ms apart (frame-cycle resonance). `--quiet-ms` gates on the
   raw output stream's last-write time too, so it won't settle mid-animation — but anchor
@@ -82,6 +87,12 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   warns `tty-echo-broken` when your text produces no echo bytes; run `fix-tty`.
 - **Mouse apps**: `mouse-detect` first; `click X Y` is 1-based while curses programs print
   0-based coords.
+- **Long typed text wraps**: `send --type` of a ~90-char line wraps on a 100-col pane
+  (the on-screen echo breaks mid-word). A `--until` pattern spanning that text must match
+  the *wrapped* screen, not the logical line — or keep sent commands short and let the
+  program print the marker. Also note `evidence.screen` shows the pane's prompt verbatim:
+  abbreviations like `~/.../` come from the shell's PS1, not from term-debug; use
+  `screen --meta`'s `pane_current_path` for the real cwd.
 - **Leaking sessions**: always `stop` (or `tmux kill-server` in test cleanup).
 
 ## Anti-Cheating Red Lines

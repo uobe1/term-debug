@@ -73,21 +73,23 @@ def capture(target: Target, flags: tuple[str, ...] = ()) -> str:
 
 
 def meta(target: Target) -> dict:
-    """One-call pane status: cursor, modes, history, death."""
-    fmt = "|".join(
-        "#{" + k + "}"
-        for k in ("cursor_x", "cursor_y", "alternate_on", "pane_in_mode",
-                  "history_size", "pane_dead", "pane_dead_status", "pane_dead_signal")
-    )
+    """One-call pane status: cursor, modes, history, death, size, cwd."""
+    keys = ("cursor_x", "cursor_y", "alternate_on", "pane_in_mode",
+            "history_size", "pane_dead", "pane_dead_status", "pane_dead_signal",
+            "pane_width", "pane_height", "pane_current_path")
+    fmt = "|".join("#{" + k + "}" for k in keys)
     res = tmux("display-message", "-p", "-F", fmt, "-t", target.to_arg(), socket=target.socket)
     out = require(res).rstrip("\n").split("|")
-    keys = ("cursor_x", "cursor_y", "alternate_on", "pane_in_mode",
-            "history_size", "pane_dead", "pane_dead_status", "pane_dead_signal")
     d: dict = {}
     bool_keys = {"alternate_on", "pane_in_mode", "pane_dead"}
-    int_keys = {"cursor_x", "cursor_y", "history_size", "pane_dead_status"}
+    int_keys = {"cursor_x", "cursor_y", "history_size", "pane_dead_status",
+                "pane_width", "pane_height"}
     for i, k in enumerate(keys):
-        v = out[i] if i < len(out) else ""
+        # pane_current_path is last and may itself contain "|": rejoin tail.
+        if k == "pane_current_path" and len(out) > len(keys) - 1:
+            v = "|".join(out[len(keys) - 1:])
+        else:
+            v = out[i] if i < len(out) else ""
         if v == "":
             d[k] = None
         elif k in bool_keys:
