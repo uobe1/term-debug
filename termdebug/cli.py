@@ -189,9 +189,8 @@ def cmd_screen(args) -> int:
 
 
 def cmd_wait(args) -> int:
-    # --until / --cmd-done here; --exit / --quiet-ms land in Tasks 6-7.
     target = resolve_target(args.name, getattr(args, "socket", None))
-    state = load_state_or_none(target.session) or {}
+    state = load_state_or_none(target.session)
 
     def capture(scrollback: int) -> str:
         flags = ("-S", str(-scrollback)) if scrollback else ()
@@ -202,8 +201,16 @@ def cmd_wait(args) -> int:
 
     conditions: list = []
     if args.until is not None:
-        conditions.append(waiting.UntilRegex(args.until, args.scrollback))
+        conditions.append(waiting.UntilRegex(args.until, args.scrollback,
+                                             target.session))
     if args.cmd_done:
+        if state is None:
+            raise TDError(
+                "session-missing",
+                f"no state.json for session {target.session!r}",
+                hint=f"expected under {records.cache_root()} — keep XDG_CACHE_HOME "
+                     f"consistent between start and wait, or start with: "
+                     f"term_debug.py start -n {target.session} --cmd bash")
         if not state.get("shell_integration"):
             raise TDError("no-shell-integration",
                           f"session {target.session!r} has no OSC 133 injection",
@@ -244,7 +251,19 @@ def cmd_wait(args) -> int:
         time.sleep(args.interval)
     raise TDError("timeout",
                   f"conditions not met within {args.timeout}s",
+                  hint=waiting.timeout_hint(cond),
                   evidence=waiting.timeout_evidence(ctx, cond))
+
+
+def cmd_resize(args) -> int:
+    target = resolve_target(args.name, getattr(args, "socket", None))
+    res = tmuxio.tmux("resize-window", "-t", target.session,
+                      "-x", str(args.width), "-y", str(args.height),
+                      socket=target.socket)
+    tmuxio.require(res, "session-missing")
+    print(json.dumps({"ok": True, "width": args.width, "height": args.height},
+                     ensure_ascii=False))
+    return 0
 
 
 def cmd_mouse_detect(args) -> int:
@@ -424,6 +443,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--format", choices=["png", "jpg"], default="png")
     p.add_argument("-o", required=True, metavar="PATH", help="output file path")
     p.set_defaults(func=cmd_screenshot)
+
+    p = sub.add_parser("resize", help="resize the session's window (forces redraw)")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--width", type=int, required=True)
+    p.add_argument("--height", type=int, required=True)
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
+    p.set_defaults(func=cmd_resize)
 
     p = sub.add_parser("sessions", help="list tmux sessions on a socket")
     p.add_argument("--socket", default=None, help="tmux socket name (-L); default socket if omitted")

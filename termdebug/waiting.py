@@ -39,15 +39,20 @@ class UntilRegex(Condition):
     label = "until"
     confidence = "inference"
 
-    def __init__(self, pattern: str, scrollback: int = 0):
+    def __init__(self, pattern: str, scrollback: int = 0, session: str | None = None):
         self.pattern = pattern
         self.scrollback = scrollback
+        self.session = session
+        self.echo_suspect = False
         self.rx = re.compile(pattern, re.DOTALL | re.MULTILINE)
 
     def evaluate(self, ctx) -> bool:
         screen = ctx.capture(self.scrollback)
-        if self.rx.search(screen):
-            return True
+        if self.rx.search(screen) or self._match_stripped(screen):
+            return self._check_echo(screen)
+        return False
+
+    def _match_stripped(self, screen: str) -> bool:
         # Self-heal red line: the terminal strips trailing spaces ('name: '
         # prints as 'name:'), so retry against per-line-rstripped text, and
         # against rstripped text + a sentinel space (pattern requires one).
@@ -57,24 +62,57 @@ class UntilRegex(Condition):
         sentinel = "\n".join(line.rstrip() + " " for line in screen.splitlines())
         return bool(self.rx.search(sentinel))
 
+    def _check_echo(self, screen: str) -> bool:
+        """Echo red line: if the matched text is just what we last typed, the
+        match is our own echo — downgrade confidence and flag it."""
+        self.echo_suspect = False
+        if self.session is None:
+            return True
+        m = self.rx.search(screen)
+        if not m or not m.group(0):
+            return True
+        try:
+            for _ts, code, data, _pos in records.events_since(self.session, 0):
+                if code != "i" or not isinstance(data, list):
+                    continue
+                typed = "".join(e.get("text", "") for e in data
+                                if isinstance(e, dict))
+                if typed and m.group(0) in typed:
+                    self.echo_suspect = True
+                    self.confidence = "heuristic"
+                    return True
+        except (TDError, OSError):
+            pass  # unmanaged pane (nested tmux): no records to inspect
+        return True
+        return True
+
     def to_json(self, met: bool) -> dict:
         return {**super().to_json(met), "pattern": self.pattern,
-                "scrollback": self.scrollback}
+                "scrollback": self.scrollback,
+                "echo_suspect": self.echo_suspect}
 
 
 class AllOf(Condition):
-    """AND composition; confidence degrades to the weakest member."""
+    """AND composition; confidence degrades to the weakest member.
+
+    Recomputed after every evaluate: a condition may downgrade itself at
+    runtime (e.g. until matching our own echo)."""
 
     def __init__(self, conditions: list[Condition]):
         if not conditions:
             raise ValueError("AllOf needs at least one condition")
         self.conditions = conditions
         self.label = "all-of"
-        weakest = max(CONFIDENCE_ORDER.index(c.confidence) for c in conditions)
+        self._recompute()
+
+    def _recompute(self) -> None:
+        weakest = max(CONFIDENCE_ORDER.index(c.confidence) for c in self.conditions)
         self.confidence = CONFIDENCE_ORDER[weakest]
 
     def evaluate(self, ctx) -> bool:
-        return all(c.evaluate(ctx) for c in self.conditions)
+        result = all(c.evaluate(ctx) for c in self.conditions)
+        self._recompute()
+        return result
 
     def to_json(self, met: bool) -> dict:
         return {**super().to_json(met),
@@ -266,12 +304,31 @@ class QuietCondition(Condition):
 
 
 def timeout_evidence(ctx, condition: Condition) -> dict:
-    """Evidence snapshot for an unmet wait: screen, cursor, condition state."""
+    """Evidence snapshot for an unmet wait: screen, cursor, raw tail, state."""
     screen = ctx.capture(0)
     try:
         m = ctx.meta()
         cursor = {"x": m.get("cursor_x"), "y": m.get("cursor_y")}
     except Exception:
         cursor = None
-    return {"screen": screen, "cursor": cursor,
+    raw_tail = ""
+    if condition.__class__.__name__ == "AllOf":
+        session = next((getattr(c, "session", None) for c in condition.conditions
+                        if getattr(c, "session", None)), None)
+        if session:
+            try:
+                raw_tail = records.stream_since(session, 0)[-300:]
+            except TDError:
+                pass
+    return {"screen": screen, "cursor": cursor, "raw_tail": raw_tail,
             "conditions": [condition.to_json(False)]}
+
+
+def timeout_hint(condition: Condition) -> str:
+    """Actionable next step for an unmet wait."""
+    if condition.__class__.__name__ == "AllOf" and any(
+            c.label == "quiet" for c in condition.conditions):
+        return ("quiet never settled — check raw.log for periodic writes "
+                "(keepalive bytes reset the silence timer); use --until on a "
+                "program marker instead, or raise --timeout")
+    return "inspect evidence.screen; try a looser --until pattern or a longer --timeout"
