@@ -61,7 +61,9 @@ def tmux(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def session_exists(name: str) -> bool:
-    res = tmux("has-session", "-t", name, check=False)
+    # Accept `session:window` / `session:window.pane` targets; has-session wants the session.
+    sess = name.split(":")[0]
+    res = tmux("has-session", "-t", sess, check=False)
     return res.returncode == 0
 
 
