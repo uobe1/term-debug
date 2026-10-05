@@ -1,3 +1,14 @@
 .worktrees/
 __pycache__/
 package-lock.json
+
+# Agent private dirs & instruction files (privacy)
+.claude/
+.codebuddy/
+.codex/
+.gemini/
+.cursor/
+.aider*
+AGENTS.md
+CODEBUDDY.md
+CLAUDE.md
