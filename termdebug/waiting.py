@@ -173,6 +173,82 @@ def pane_dead_error(ctx) -> TDError:
     )
 
 
+class QuietCondition(Condition):
+    """Animation-immune stability (heuristic).
+
+    Two independent gates:
+    1. Output activity: the raw o-stream's last event must be older than
+       the quiet interval (immune to screen-content resonance, where a
+       cyclic animation happens to repaint identical frames at sampling
+       time).
+    2. Screen stability: (screen, cursor_x/y, alternate_on, history_size)
+       must be identical across two samples spaced >= interval apart.
+
+    An unclosed CSI 2026 (begin synchronized update) forces instability.
+    """
+    label = "quiet"
+    confidence = "heuristic"
+
+    def __init__(self, session: str, ms: int):
+        self.session = session
+        self.ms = ms
+        self.interval = max(ms / 1000, 0.25)  # sampling floor: 250ms
+        self._last = None
+        self._open_2026 = 0
+        self._last_o_ts = None  # elapsed of the newest o-event
+        w = records.V2Writer(session)
+        self.t0 = w.t0
+        self._scan_offset = 0
+        self._tail = ""
+        self._consume_stream()
+
+    def _consume_stream(self) -> None:
+        path = records.session_dir(self.session) / "raw.log"
+        try:
+            size = path.stat().st_size
+        except FileNotFoundError:
+            return
+        if size <= self._scan_offset:
+            return
+        text = ""
+        for ts, code, data in records.events_since(self.session, self._scan_offset):
+            if code == "o" and isinstance(data, str):
+                self._last_o_ts = ts
+                text += data
+        self._scan_offset = size
+        buf = self._tail + text
+        for i in range(len(buf) - 7):
+            if buf.startswith("\x1b[?2026h", i):
+                self._open_2026 += 1
+            elif buf.startswith("\x1b[?2026l", i):
+                self._open_2026 = max(0, self._open_2026 - 1)
+        self._tail = buf[-16:]
+
+    def evaluate(self, ctx) -> bool:
+        self._consume_stream()
+        m = ctx.meta()
+        sample = (ctx.capture(0), m.get("cursor_x"), m.get("cursor_y"),
+                  m.get("alternate_on"), m.get("history_size"))
+        if self._open_2026 > 0:
+            self._last = sample  # never settle mid-synchronized-update
+            return False
+        # Gate 1: real output activity — how long since the pane emitted?
+        if self._last_o_ts is None:
+            return False
+        idle = (time.time() - self.t0) - self._last_o_ts
+        if idle < self.interval:
+            self._last = sample
+            return False
+        # Gate 2: screen snapshot stability across spaced samples.
+        if self._last == sample:
+            return True
+        self._last = sample
+        return False
+
+    def to_json(self, met: bool) -> dict:
+        return {**super().to_json(met), "ms": self.ms}
+
+
 def timeout_evidence(ctx, condition: Condition) -> dict:
     """Evidence snapshot for an unmet wait: screen, cursor, condition state."""
     screen = ctx.capture(0)

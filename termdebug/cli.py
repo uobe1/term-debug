@@ -155,15 +155,20 @@ def cmd_wait(args) -> int:
         conditions.append(waiting.CmdDone(target.session, args.expect_code))
     if args.exit:
         conditions.append(waiting.ExitCondition(args.expect_code))
+    if args.quiet_ms is not None:
+        conditions.append(waiting.QuietCondition(target.session, args.quiet_ms))
     if not conditions:
         raise TDError("session-missing", "wait needs a condition",
-                      hint="use --until, --cmd-done or --exit")
+                      hint="use --until, --cmd-done, --exit or --quiet-ms")
     cond = waiting.AllOf(conditions)
     ctx = waiting.WaitContext(capture, pane_meta)
+    writer = records.V2Writer(target.session)
 
     deadline = time.monotonic() + args.timeout
     while True:
         if cond.evaluate(ctx):
+            writer.append("m", {"event": "wait-met",
+                                "confidence": cond.confidence})
             print(json.dumps({
                 "verdict": "met",
                 "confidence": cond.confidence,
@@ -229,6 +234,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="wait for the OSC 133 command-done marker (fact)")
     p.add_argument("--exit", action="store_true",
                    help="wait for the pane to exit (remain-on-exit, fact)")
+    p.add_argument("--quiet-ms", type=int, default=None, metavar="N",
+                   help="stable for N ms via double sampling (heuristic)")
     p.add_argument("--expect-code", type=int, default=None, metavar="N",
                    help="with --cmd-done/--exit: fail immediately unless exit code == N")
     p.add_argument("--scrollback", type=int, default=0, metavar="N",

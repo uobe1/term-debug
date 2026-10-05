@@ -30,14 +30,14 @@ def read_state(session: str) -> dict:
     return json.loads(p.read_text())
 
 
-def stream_since(session: str, offset: int) -> str:
-    """Concatenate o-event payloads from raw.log starting at byte offset.
+def events_since(session: str, offset: int) -> list[tuple]:
+    """(elapsed, code, data) tuples from raw.log starting at byte offset.
 
     Only complete lines are considered; the offset must sit on a line
     boundary (last_send_offset always does — senders write whole lines).
     """
     path = session_dir(session) / "raw.log"
-    out: list[str] = []
+    out: list[tuple] = []
     with path.open("r", encoding="utf-8", errors="replace") as fh:
         fh.seek(offset)
         for line in fh:
@@ -45,10 +45,15 @@ def stream_since(session: str, offset: int) -> str:
                 ev = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(ev, list) and len(ev) >= 3 and ev[1] == "o":
-                if isinstance(ev[2], str):
-                    out.append(ev[2])
-    return "".join(out)
+            if isinstance(ev, list) and len(ev) >= 3 and isinstance(ev[1], str):
+                out.append((ev[0], ev[1], ev[2]))
+    return out
+
+
+def stream_since(session: str, offset: int) -> str:
+    """Concatenate o-event payloads from raw.log starting at byte offset."""
+    return "".join(data for _, code, data in events_since(session, offset)
+                   if code == "o" and isinstance(data, str))
 
 
 class V2Writer:
