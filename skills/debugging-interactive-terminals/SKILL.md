@@ -87,7 +87,9 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   for the stream to actually start (`--until` on the streaming indicator) before trusting
   quiet for its end.
 - **C-\\**: no key name exists; send raw bytes: `send --hex 1c`. Same for any byte without
-  a tmux key name.
+  a tmux key name. Multi-byte sequences work too (`--hex 1b5b31333b3275` = kitty
+  Shift+Enter) — tmux's `-H` takes one byte per argument, so the CLI splits the string
+  for you within a single send-keys call (escape sequences arrive contiguously).
 - **Stuck/echo-less screen**: a program may have mangled the tty (`stty -echo`). `send`
   warns `tty-echo-broken` when your text produces no echo bytes; run `fix-tty`.
 - **Mouse apps**: `mouse-detect` first; `click X Y` is 1-based while curses programs print
@@ -143,7 +145,10 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    opposite: a single call with two C-c's does NOT work — use two separate
    `send --key C-c` calls with a short sleep (0.3-0.5s; **err on the short side** — the
    app's double-tap window is <1s of *key-event* time, and each CLI invocation's startup
-   inflates the gap, so sleep 1 misses it); confirm with `--cmd-done`. Note that
+   inflates the gap, so sleep 1 misses it); confirm with `--cmd-done`. For **multi-line
+   input** in apps that don't bind C-j: send the kitty keyboard encoding of Shift+Enter
+   via `--hex 1b5b31333b3275` in a single call (see the hex note above) — bracketed paste
+   and xterm Shift+Enter encodings are NOT parsed by ink. Note that
    restarting the app in the same pane leaves stale frames that fake-settle short quiets
    and re-match old `--until` anchors — **the reliable way to see the new first screen is
    anchoring the `>` input box** (`--until '^>$'`); a longer quiet (~2.5s) is only a

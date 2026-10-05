@@ -80,6 +80,24 @@ def echo_broken(session: str, offset: int, text: str, window: float = 1.0) -> bo
     return True
 
 
+def hex_to_args(h: str) -> list[str]:
+    """Expand a hex string into send-keys -H args (tmux 3.x: one byte per -H).
+
+    `--hex 1b5b3133` must become `-H 1b -H 5b -H 31 -H 33` — passing the whole
+    string as a single -H argument is silently dropped by tmux 3.7c (rc=0,
+    zero bytes delivered). Byte-splitting stays within one send-keys call, so
+    escape sequences arrive contiguously.
+    """
+    h = h.strip().lower()
+    if len(h) % 2 or not all(c in "0123456789abcdef" for c in h):
+        raise TDError("session-missing", f"bad hex {h!r}",
+                      hint="even-length hex string, e.g. 1c or 1b5b3133")
+    args: list[str] = []
+    for i in range(0, len(h), 2):
+        args += ["-H", h[i:i + 2]]
+    return args
+
+
 def send(target: tmuxio.Target, text: list[str], keys: list[str],
          hexes: list[str]) -> list[dict]:
     """Inject input as separate calls; returns the i-event records in order."""
@@ -95,6 +113,6 @@ def send(target: tmuxio.Target, text: list[str], keys: list[str],
         _run_or_die(target, [k], f"key {k}")
         events.append({"key": k})
     for h in hexes:
-        _run_or_die(target, ["-H", h], f"hex {h}")
+        _run_or_die(target, hex_to_args(h), f"hex {h}")
         events.append({"hex": h})
     return events

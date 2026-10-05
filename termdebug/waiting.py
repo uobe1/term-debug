@@ -321,7 +321,7 @@ def timeout_evidence(ctx, condition: Condition) -> dict:
         if session:
             try:
                 raw_tail = records.stream_since(session, 0)[-300:]
-            except TDError:
+            except (TDError, OSError):
                 pass
     return {"screen": screen, "cursor": cursor, "raw_tail": raw_tail,
             "conditions": [condition.to_json(False)]}

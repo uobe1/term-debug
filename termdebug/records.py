@@ -43,7 +43,11 @@ def events_since(session: str, offset: int) -> list[tuple]:
     """
     path = session_dir(session) / "raw.log"
     out: list[tuple] = []
-    with path.open("r", encoding="utf-8", errors="replace") as fh:
+    try:
+        fh = path.open("r", encoding="utf-8", errors="replace")
+    except OSError:
+        return out  # unmanaged session (nested tmux) or cache mismatch
+    with fh:
         pos = fh.seek(offset)
         for line in fh:
             start = pos
