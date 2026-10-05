@@ -1,0 +1,90 @@
+"""On-disk session evidence: asciicast v2 raw.log + atomic state.json.
+
+Layout: $XDG_CACHE_HOME/term-debug/<session>/
+  raw.log     line 1 = v2 header (object); then event lines [elapsed, code, data]
+              codes: o=pane output stream, i=client injection, r=resize, m=sync point
+  state.json  locator + recorder state (socket, pane_id, shell_integration,
+              last_send_offset ...); always written via tmp+rename.
+"""
+import json
+import os
+import time
+from pathlib import Path
+
+from termdebug.errors import TDError
+
+
+def cache_root() -> Path:
+    return Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "term-debug"
+
+
+def session_dir(session: str) -> Path:
+    return cache_root() / session
+
+
+def read_state(session: str) -> dict:
+    p = session_dir(session) / "state.json"
+    if not p.exists():
+        raise TDError("session-missing", f"no state.json for session {session!r}",
+                      hint="run: term_debug.py start -n <name> --cmd <command>")
+    return json.loads(p.read_text())
+
+
+class V2Writer:
+    """Appends events to raw.log and persists state.json atomically."""
+
+    def __init__(self, session: str):
+        self.dir = session_dir(session)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.path = self.dir / "raw.log"
+        self.state_path = self.dir / "state.json"
+        header_ts = None
+        if self.path.exists():
+            first = self.path.read_bytes().split(b"\n", 1)[0]
+            try:
+                header_ts = json.loads(first).get("timestamp")
+            except (ValueError, AttributeError):
+                header_ts = None
+        self.t0 = header_ts if header_ts is not None else time.time()
+
+    @classmethod
+    def fresh(cls, session: str, width: int, height: int, cmd: str,
+              socket: str | None) -> "V2Writer":
+        w = cls(session)
+        w.t0 = time.time()
+        header = {
+            "version": 2,
+            "width": width,
+            "height": height,
+            "timestamp": w.t0,
+            "cmd": cmd,
+            "env": {k: os.environ.get(k) for k in ("SHELL", "TERM")},
+        }
+        w.path.write_text(json.dumps(header, ensure_ascii=False) + "\n")
+        w.state = {
+            "session": session,
+            "socket": socket,
+            "pane_id": None,
+            "cmd": cmd,
+            "width": width,
+            "height": height,
+            "shell_integration": False,
+            "last_send_offset": 0,
+            "started_at": w.t0,
+        }
+        w.save_state()
+        return w
+
+    def save_state(self) -> None:
+        tmp = self.state_path.with_name("state.json.tmp")
+        tmp.write_text(json.dumps(self.state, ensure_ascii=False) + "\n")
+        os.replace(tmp, self.state_path)
+
+    def append(self, code: str, data) -> None:
+        line = json.dumps([round(time.time() - self.t0, 6), code, data],
+                          ensure_ascii=False) + "\n"
+        with open(self.path, "a", encoding="utf-8") as fh:
+            fh.write(line)
+
+    def size(self) -> int:
+        return self.path.stat().st_size
