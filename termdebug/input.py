@@ -3,6 +3,8 @@
 Red line (design section 5): `-l` text and key names must never be mixed in
 one send-keys invocation — mixing them silently drops keys.
 """
+import re
+
 from termdebug import tmuxio
 from termdebug.errors import TDError
 
@@ -23,6 +25,38 @@ def _run_or_die(target: tmuxio.Target, args: list[str], what: str) -> None:
     res = tmuxio.tmux("send-keys", "-t", target.to_arg(), *args, socket=target.socket)
     if res.returncode != 0:
         raise TDError("session-missing", res.stderr.strip() or f"send-keys failed: {what}")
+
+
+def mouse_encode(button: int, x: int, y: int, press: bool) -> str:
+    """SGR mouse sequence; x/y are 0-based here, the wire format is 1-based.
+
+    ESC [ < b ; x ; y M (press) / m (release).
+    """
+    return f"\x1b[<{button};{x + 1};{y + 1}{'M' if press else 'm'}"
+
+
+def mouse_mode(raw_tail: str) -> dict:
+    """Latest mouse tracking state from the pane's raw output stream.
+
+    Scans for enable/disable pairs of the tracking modes; the most recent
+    event of each wins (programs routinely toggle modes on enter/exit).
+    """
+    def latest(on_seq: str, off_seq: str) -> bool:
+        on, off = raw_tail.rfind(on_seq), raw_tail.rfind(off_seq)
+        return on >= 0 and on > off
+
+    normal = latest("\x1b[?1000h", "\x1b[?1000l")
+    motion = latest("\x1b[?1002h", "\x1b[?1002l")
+    anym = latest("\x1b[?1003h", "\x1b[?1003l")
+    sgr = latest("\x1b[?1006h", "\x1b[?1006l")
+    return {"enabled": normal or motion or anym, "sgr": sgr,
+            "normal": normal, "motion": motion, "any_motion": anym}
+
+
+def click(target: tmuxio.Target, x: int, y: int) -> None:
+    """Click at 1-based screen coordinates: inject press+release SGR pair."""
+    seq = mouse_encode(0, x - 1, y - 1, True) + mouse_encode(0, x - 1, y - 1, False)
+    _run_or_die(target, ["-l", seq], f"click {x},{y}")
 
 
 def send(target: tmuxio.Target, text: list[str], keys: list[str],

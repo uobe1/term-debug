@@ -190,6 +190,27 @@ def cmd_wait(args) -> int:
                   evidence=waiting.timeout_evidence(ctx, cond))
 
 
+def cmd_mouse_detect(args) -> int:
+    target = resolve_target(args.name)
+    tail = records.stream_since(target.session, 0)[-16384:]
+    print(json.dumps(tdinput.mouse_mode(tail), ensure_ascii=False))
+    return 0
+
+
+def cmd_click(args) -> int:
+    target = resolve_target(args.name)
+    tail = records.stream_since(target.session, 0)[-16384:]
+    mode = tdinput.mouse_mode(tail)
+    if not mode["enabled"]:
+        raise TDError("mouse-not-enabled",
+                      "the program has not enabled mouse reporting",
+                      hint="only programs that turned on \\e[?1000/1002/1003h accept clicks")
+    tdinput.click(target, args.x, args.y)
+    print(json.dumps({"ok": True, "clicked": [args.x, args.y],
+                      "sgr": mode["sgr"]}, ensure_ascii=False))
+    return 0
+
+
 def _not_implemented(args) -> int:
     raise TDError(
         "not-implemented",
@@ -259,8 +280,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--element-at", nargs=2, type=int, metavar=("X", "Y"), help="single cell JSON")
     p.set_defaults(func=cmd_screen)
 
+    p = sub.add_parser("mouse-detect", help="report the pane's mouse tracking mode")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.set_defaults(func=cmd_mouse_detect)
+
+    p = sub.add_parser("click", help="inject an SGR mouse click (1-based coords)")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("x", type=int, help="column, 1-based")
+    p.add_argument("y", type=int, help="row, 1-based")
+    p.set_defaults(func=cmd_click)
+
     for name in ("sessions", "trace",
-                 "fix-tty", "screenshot", "mouse-detect"):
+                 "fix-tty", "screenshot"):
         # Real options are added as each subcommand gets implemented.
         p = sub.add_parser(name, help=name)
         p.add_argument("args", nargs="*", help=argparse.SUPPRESS)
