@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from termdebug import input as tdinput
-from termdebug import records, screen as tdscreen, tmuxio
+from termdebug import records, screen as tdscreen, tmuxio, waiting
 from termdebug.errors import TDError
 
 PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
@@ -122,27 +122,42 @@ def cmd_screen(args) -> int:
 
 
 def cmd_wait(args) -> int:
-    # Minimal regex-poll wait; the full verdict engine lands in waiting.py (Task 4).
+    # Regex condition here; --cmd-done / --exit / --quiet-ms land in Tasks 5-7.
     target = resolve_target(args.name)
-    pattern = re.compile(args.until, re.DOTALL | re.MULTILINE)
+
+    def capture(scrollback: int) -> str:
+        flags = ("-S", str(-scrollback)) if scrollback else ()
+        return tmuxio.capture(target, flags)
+
+    def pane_meta() -> dict:
+        return tmuxio.meta(target)
+
+    conditions: list = []
+    if args.until is not None:
+        conditions.append(waiting.UntilRegex(args.until, args.scrollback))
+    if not conditions:
+        raise TDError("session-missing", "wait needs a condition",
+                      hint="use --until (more primitives land in Tasks 5-7)")
+    cond = waiting.AllOf(conditions)
+    ctx = waiting.WaitContext(capture, pane_meta)
+
     deadline = time.monotonic() + args.timeout
-    screen = ""
-    matched = False
     while True:
-        screen = tmuxio.capture(target)
-        # Self-heal: match against rstripped text too (trailing-space red line).
-        if pattern.search(screen) or pattern.search("\n".join(
-                line.rstrip() for line in screen.splitlines())):
-            matched = True
-            break
+        if cond.evaluate(ctx):
+            print(json.dumps({
+                "verdict": "met",
+                "confidence": cond.confidence,
+                **cond.to_json(True),
+                "evidence": {"screen": capture(0)},
+            }, ensure_ascii=False))
+            return 0
         if time.monotonic() >= deadline:
             break
         time.sleep(args.interval)
-    if matched:
-        print(json.dumps({"ok": True, "matched": args.until}, ensure_ascii=False))
-        return 0
-    raise TDError("timeout", f"no match for {args.until!r} within {args.timeout}s",
-                  evidence={"screen": screen})
+    err = TDError("timeout",
+                  f"conditions not met within {args.timeout}s",
+                  evidence=waiting.timeout_evidence(ctx, cond))
+    raise err
 
 
 def _not_implemented(args) -> int:
@@ -185,6 +200,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("wait", help="poll the screen until a regex matches")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
     p.add_argument("--until", required=True, help="regex to wait for")
+    p.add_argument("--scrollback", type=int, default=0, metavar="N",
+                   help="search N lines of history too (default: visible screen)")
     p.add_argument("--timeout", type=float, default=10.0, help="max seconds (default 10)")
     p.add_argument("--interval", type=float, default=0.1, help="poll interval (default 0.1)")
     p.set_defaults(func=cmd_wait)
