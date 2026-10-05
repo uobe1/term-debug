@@ -101,11 +101,27 @@ class CmdDone(Condition):
         return records.stream_since(self.session, state.get("last_send_offset", 0))
 
     def evaluate(self, ctx) -> bool:
-        events = osc133.scan_stream(self._stream())
-        done = osc133.last_done(events)
-        if done is None:
+        """Replay the full o-stream through the state machine, then accept
+        the newest done/aborted event only if it was emitted after the last
+        send (byte position >= last_send_offset). Full replay keeps C-marker
+        continuity: the C of a long-running command may sit far behind the
+        scan start."""
+        state = records.read_state(self.session)
+        offset = state.get("last_send_offset", 0)
+        sc = osc133.OSC133Scanner()
+        last_terminal = None  # (kind, code, byte_pos)
+        for _ts, code, data, pos in records.events_since(self.session, 0):
+            if code != "o" or not isinstance(data, str):
+                continue
+            for ev in sc.feed(data):
+                if ev["kind"] in ("done", "aborted"):
+                    last_terminal = (ev["kind"], ev.get("code"), pos)
+        if last_terminal is None or last_terminal[2] < offset:
             return False
-        self.exit_code = done.get("code")
+        kind, code_, _ = last_terminal
+        if kind == "aborted":
+            return False  # marker without a fresh C: no command completed
+        self.exit_code = code_
         if self.expect_code is not None and self.exit_code != self.expect_code:
             raise osc133.mismatch_error(
                 self.expect_code, self.exit_code,
@@ -211,7 +227,7 @@ class QuietCondition(Condition):
         if size <= self._scan_offset:
             return
         text = ""
-        for ts, code, data in records.events_since(self.session, self._scan_offset):
+        for ts, code, data, _pos in records.events_since(self.session, self._scan_offset):
             if code == "o" and isinstance(data, str):
                 self._last_o_ts = ts
                 text += data

@@ -20,14 +20,16 @@ from termdebug.errors import TDError
 PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
 
 
-def resolve_target(name: str) -> tmuxio.Target:
+def resolve_target(name: str, socket: str | None = None) -> tmuxio.Target:
     """Resolve a CLI -n argument to a full target; socket falls back to state.json.
 
     An explicit socket in the target (inner:inner:0) wins — nested tmux panes
     are addressable without being term-debug-managed.
     """
     t = tmuxio.parse_target(name)
-    if t.socket is None:
+    if socket is not None and t.socket is None:
+        t = tmuxio.Target(socket, t.session, t.window, t.pane)
+    elif t.socket is None:
         t = tmuxio.Target(records.read_state(t.session).get("socket"),
                           t.session, t.window, t.pane)
     return t
@@ -111,7 +113,7 @@ def cmd_stop(args) -> int:
 
 
 def cmd_send(args) -> int:
-    target = resolve_target(args.name)
+    target = resolve_target(args.name, getattr(args, "socket", None))
     state = load_state_or_none(target.session)
     writer = records.V2Writer(target.session)
     offset = writer.size()  # where output caused by this send starts
@@ -133,7 +135,7 @@ def cmd_send(args) -> int:
 
 
 def cmd_fix_tty(args) -> int:
-    target = resolve_target(args.name)
+    target = resolve_target(args.name, getattr(args, "socket", None))
     state = records.read_state(target.session)
     writer = records.V2Writer(target.session)
     offset = writer.size()
@@ -151,7 +153,7 @@ def cmd_fix_tty(args) -> int:
 
 
 def cmd_screen(args) -> int:
-    target = resolve_target(args.name)
+    target = resolve_target(args.name, getattr(args, "socket", None))
     if args.meta:
         state = records.read_state(target.session)
         m = tmuxio.meta(target)
@@ -188,7 +190,7 @@ def cmd_screen(args) -> int:
 
 def cmd_wait(args) -> int:
     # --until / --cmd-done here; --exit / --quiet-ms land in Tasks 6-7.
-    target = resolve_target(args.name)
+    target = resolve_target(args.name, getattr(args, "socket", None))
     state = load_state_or_none(target.session) or {}
 
     def capture(scrollback: int) -> str:
@@ -246,14 +248,14 @@ def cmd_wait(args) -> int:
 
 
 def cmd_mouse_detect(args) -> int:
-    target = resolve_target(args.name)
+    target = resolve_target(args.name, getattr(args, "socket", None))
     tail = records.stream_since(target.session, 0)[-16384:]
     print(json.dumps(tdinput.mouse_mode(tail), ensure_ascii=False))
     return 0
 
 
 def cmd_click(args) -> int:
-    target = resolve_target(args.name)
+    target = resolve_target(args.name, getattr(args, "socket", None))
     tail = records.stream_since(target.session, 0)[-16384:]
     mode = tdinput.mouse_mode(tail)
     if not mode["enabled"]:
@@ -267,7 +269,14 @@ def cmd_click(args) -> int:
 
 
 def cmd_screenshot(args) -> int:
-    target = resolve_target(args.name)
+    import os
+    if os.environ.get("TERM_DEBUG_DISABLE_IMAGE") == "1":
+        # Blind-test switch: heuristics-only testers get the image channel
+        # denied with the same structured error shape as a missing Pillow.
+        raise TDError("pillow-missing",
+                      "image channel disabled by TERM_DEBUG_DISABLE_IMAGE=1",
+                      hint="this session runs heuristics-only; use the text channels")
+    target = resolve_target(args.name, getattr(args, "socket", None))
     text = tmuxio.capture(target, ("-e",))
     grid = tdscreen.parse_grid(text)
     try:
@@ -344,10 +353,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("stop", help="kill the session and finalize raw.log")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.set_defaults(func=cmd_stop)
 
     p = sub.add_parser("send", help="inject text/keys (always split into separate calls)")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.add_argument("--type", action="append", metavar="TEXT",
                    help="literal text to type (repeatable, sent before keys)")
     p.add_argument("--key", action="append", metavar="KEY",
@@ -358,6 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("wait", help="poll the screen until a regex matches")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.add_argument("--until", default=None, help="regex to wait for")
     p.add_argument("--cmd-done", action="store_true",
                    help="wait for the OSC 133 command-done marker (fact)")
@@ -375,6 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("screen", help="observe the pane: text, meta, SGR grid/runs")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.add_argument("--meta", action="store_true", help="pane status JSON (cursor/modes/history)")
     p.add_argument("-N", "--keep-trailing", action="store_true", help="keep trailing spaces")
     p.add_argument("-J", "--join", action="store_true", help="join wrapped lines into logical lines")
@@ -390,20 +403,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("mouse-detect", help="report the pane's mouse tracking mode")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.set_defaults(func=cmd_mouse_detect)
 
     p = sub.add_parser("click", help="inject an SGR mouse click (1-based coords)")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.add_argument("x", type=int, help="column, 1-based")
     p.add_argument("y", type=int, help="row, 1-based")
     p.set_defaults(func=cmd_click)
 
     p = sub.add_parser("fix-tty", help="restore sane terminal settings (stty sane)")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.set_defaults(func=cmd_fix_tty)
 
     p = sub.add_parser("screenshot", help="render the pane to png/jpg (Pillow)")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L) override")
     p.add_argument("--format", choices=["png", "jpg"], default="png")
     p.add_argument("-o", required=True, metavar="PATH", help="output file path")
     p.set_defaults(func=cmd_screenshot)

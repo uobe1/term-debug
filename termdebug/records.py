@@ -25,34 +25,41 @@ def session_dir(session: str) -> Path:
 def read_state(session: str) -> dict:
     p = session_dir(session) / "state.json"
     if not p.exists():
-        raise TDError("session-missing", f"no state.json for session {session!r}",
-                      hint="run: term_debug.py start -n <name> --cmd <command>")
+        raise TDError("session-missing",
+                      f"no state.json for session {session!r}",
+                      hint=f"expected at {p} — if you started the session with a "
+                           f"different XDG_CACHE_HOME, every command must use the "
+                           f"same one; or start with: term_debug.py start -n "
+                           f"{session} --cmd <command>")
     return json.loads(p.read_text())
 
 
 def events_since(session: str, offset: int) -> list[tuple]:
-    """(elapsed, code, data) tuples from raw.log starting at byte offset.
+    """(elapsed, code, data, byte_pos) tuples from raw.log.
 
-    Only complete lines are considered; the offset must sit on a line
-    boundary (last_send_offset always does — senders write whole lines).
+    byte_pos is the file offset of the event's own line, so callers can
+    correlate events with state.last_send_offset. Starting at 0 replays the
+    whole session (needed to keep OSC 133 state machine continuity).
     """
     path = session_dir(session) / "raw.log"
     out: list[tuple] = []
     with path.open("r", encoding="utf-8", errors="replace") as fh:
-        fh.seek(offset)
+        pos = fh.seek(offset)
         for line in fh:
+            start = pos
+            pos += len(line.encode("utf-8", "replace"))
             try:
                 ev = json.loads(line)
             except ValueError:
                 continue
             if isinstance(ev, list) and len(ev) >= 3 and isinstance(ev[1], str):
-                out.append((ev[0], ev[1], ev[2]))
+                out.append((ev[0], ev[1], ev[2], start))
     return out
 
 
 def stream_since(session: str, offset: int) -> str:
     """Concatenate o-event payloads from raw.log starting at byte offset."""
-    return "".join(data for _, code, data in events_since(session, offset)
+    return "".join(data for _, code, data, _ in events_since(session, offset)
                    if code == "o" and isinstance(data, str))
 
 
