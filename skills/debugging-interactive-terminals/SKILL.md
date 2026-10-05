@@ -145,8 +145,9 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    app's double-tap window is <1s of *key-event* time, and each CLI invocation's startup
    inflates the gap, so sleep 1 misses it); confirm with `--cmd-done`. Note that
    restarting the app in the same pane leaves stale frames that fake-settle short quiets
-   and re-match old `--until` anchors — use a longer quiet (~2.5s) or anchor on
-   new-frame-only features (the `>` input box).
+   and re-match old `--until` anchors — **the reliable way to see the new first screen is
+   anchoring the `>` input box** (`--until '^>$'`); a longer quiet (~2.5s) is only a
+   no-anchor fallback and can still settle on stale frames when cold start exceeds it.
 
 ## Tester Feedback Protocol
 
