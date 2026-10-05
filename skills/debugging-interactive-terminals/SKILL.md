@@ -119,10 +119,17 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
 3. **todo.js double-bug repro** (JS project): run the failing program in the pane, wait for
    the error via `--until`, capture `trace --format json` as the evidence bundle, fix code
    with normal tools, re-run the same chain to prove the fix.
-4. **ink/bubbletea app (e.g. codebuddy CLI)**: start → `--quiet-ms 800` for the first paint
-   → `screen --runs`/`--element-at` to locate the input → `--type` message + Enter →
-   `--quiet-ms 1000` for the streamed answer → `Escape` (`--key Escape`) interrupts;
-   double-ESC restores input.
+4. **ink/bubbletea app (e.g. codebuddy CLI)**: launch inside the pane with
+   `unset SERVER__PORT CODEBUDDY_SERVICE_PROXY_URL` first (inherited agent env makes the
+   TUI silently never mount — zero bytes after the command echo). A fresh directory first
+   shows a **trust dialog** ("Do you trust the files in this folder?") — Enter through it
+   before expecting the real first screen. Then `--quiet-ms 800` for the first paint →
+   `screen --runs`/`--element-at` to locate the input → `--type` message + Enter →
+   `--quiet-ms 1000` for the streamed answer → `Escape` (`--key Escape`) interrupts
+   (`└ Interrupted by user`); double-ESC opens the rewind/resume menu (note: its live
+   "N s ago" timestamps repaint every second — wait with `--until` anchors, not quiet).
+   **Exit** needs a double C-c within a short window (single C-c or a long gap does
+   nothing); confirm with `--cmd-done`.
 
 ## Tester Feedback Protocol
 
