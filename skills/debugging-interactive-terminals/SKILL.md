@@ -1,91 +1,115 @@
 ---
 name: debugging-interactive-terminals
-description: Use when debugging, driving, or reproducing issues in interactive terminal tools such as tmux panes, full-screen TUIs (nano, vim, htop, less), or interactive REPLs (bash, python, node), where output is a screen rather than plain stdout and timing/state matter
+description: Use when debugging, driving, or reproducing issues in interactive terminal programs — tmux panes, full-screen TUIs (nano, vim, htop, less), interactive REPLs (bash, python, node), animated TUI apps (ink, bubbletea), or when you must confirm a command finished, get an exit code, click a TUI element, or capture what an on-screen program really shows
 ---
 
 # Debugging Interactive Terminals
 
 ## Overview
 
-Interactive tools (tmux, nano, vim, htop, bash REPL, python REPL) do **not** behave like
-piped commands: they own a screen, keep internal state, and react to individual keystrokes.
-You cannot just capture stdout — you must drive them like a human at a keyboard.
+Interactive programs own a screen and react to keystrokes; stdout capture and blind `sleep`
+both fail. term-debug v2 drives them through tmux and replaces guessing with **evidence**:
+every wait returns a verdict with a confidence level, every failure returns structured JSON
+with a screen snapshot attached.
 
-**Core principle:** The unit of observation is the *screen* (`capture-pane`), the unit of action
-is a *keystroke* (`send-keys`), and you must **synchronize on screen state, never on a blind
-`sleep`**. Wait for the prompt/pattern you expect, then act.
+**Core principles**
 
-CLI: `term-debug` (Python + tmux). Reference it by absolute path
-`/data/data/com.termux/files/home/agent-i/term_debug.py`, or symlink it onto PATH:
-`ln -s /data/data/com.termux/files/home/agent-i/term_debug.py ~/.local/bin/term-debug`.
+1. **Wait for state, then act.** Never sleep, never guess a delay. After every action, `wait`
+   for the condition you expect before the next one.
+2. **Know what your evidence is worth.** `fact` (shell protocol / pane death) beats
+   `inference` (screen regex — echo can fake it) beats `heuristic` (sampling-based quiet
+   detection). Prefer fact; treat heuristic as "probably safe".
+3. **Pick the right observation channel.** Attribute/semantic questions ("which item is
+   selected", "what color is it", "find the row with X") → `screen` text channels. Spatial
+   layout questions ("what does the frame look like", "where is the dialog box drawn") →
+   `screenshot`. You may alternate freely.
 
-## When to Use
-
-- Driving/debugging a **tmux** pane or a tmux-in-tmux scenario.
-- Operating a **full-screen TUI**: nano, vim, htop, less, top, mutt.
-- Scripting an **interactive REPL**: bash, python, node, sqlite3.
-- Reproducing a stateful interaction bug and recording it as evidence (the `trace`).
-
-**Don't use** for ordinary non-interactive commands — just use the Bash tool directly.
-
-## Workflow
-
-```
-spawn  →  capture state  →  send input  →  wait for expected state  →  verify  →  loop  →  cleanup
-```
-
-1. `start` a detached tmux session running the target.
-2. `screen` to read current state; `wait --until <regex>` to block until ready.
-3. `send --type "text"` for literal input, `--key C-o` for control keys, `--enter` for Enter.
-4. `wait --until <pattern>` after every action that changes state (never guess a delay).
-5. Repeat until you've reproduced / root-caused the issue.
-6. `stop` to kill the session (always — leftover sessions leak).
-
-**REQUIRED BACKGROUND:** `superpowers:systematic-debugging` (find root cause before fixing).
-The `wait` loop *is* the condition-based-waiting pattern from `superpowers:condition-based-waiting`.
+CLI: `python3 <repo>/term_debug.py ...` (only external dependency: tmux).
 
 ## Quick Reference
 
 | Command | Purpose |
 |---------|---------|
-| `term-debug start -n N [--cmd bash] [--width W --height H]` | create detached session |
-| `term-debug send -n N --type "text" [--key Enter\|C-o\|C-x\|Escape] [--enter]` | send input |
-| `term-debug screen -n N [--numbered]` | capture visible screen (the state) |
-| `term-debug wait -n N --until 'regex' [--timeout 10 --interval 0.2]` | block until pattern; exit 0=match, 1=timeout |
-| `term-debug trace -n N [--format text\|json]` | replay the recorded interaction |
-| `term-debug stop -n N` | kill session + finalize trace |
+| `start -n N --cmd bash --width W --height H` | create session (+ v2 recording; bash gets OSC 133 integration) |
+| `send -n N --type "text" --key Enter` | inject input; text and keys are **always separate** tmux calls |
+| `screen -n N [--meta] [-N] [-J] [--grid] [--runs] [--grep --fg red] [--element-at X Y]` | text channel: status, trailing spaces, join, SGR cell grid, runs, attribute search, cell lookup |
+| `wait -n N --cmd-done [--expect-code 0]` | **command finished + exit code (fact)** — use this to confirm completion |
+| `wait -n N --exit [--expect-code N]` | pane exit / death, signal name in evidence (fact) |
+| `wait -n N --until 'regex' [--scrollback N]` | screen regex (inference; rstrip self-heal for trailing spaces) |
+| `wait -n N --quiet-ms 800` | screen stable for N ms (heuristic; animation-immune) |
+| `screenshot -n N --format png -o p.png` | image channel via Pillow |
+| `mouse-detect -n N` / `click -n N X Y` | mouse mode (SGR) / click at 1-based coords |
+| `fix-tty -n N` | restore sane terminal (stty sane) after ECHO damage |
+| `trace -n N [--format json]` | project raw.log: input/output/sync events |
+| `sessions [--socket NAME]` / `stop -n N` | list sessions / kill session |
 
-Trace is recorded automatically to `~/.cache/term-debug/<name>/trace.jsonl`.
+Targets are `(socket, session, window, pane)` four-tuples: `-n "sess"`, `"sess:win"`,
+`"sock:sess:win.pane"`. Nested tmux panes are directly addressable via their socket name.
+
+## Confirming a command finished (the standard loop)
+
+```bash
+TD="python3 $REPO/term_debug.py"
+$TD start -n demo --cmd bash --width 100 --height 30
+$TD send  -n demo --type "make build" --key Enter
+$TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
+```
+
+- `--cmd-done` scans the pane's raw output stream for OSC 133 markers injected into bash.
+  The exit code comes from the shell protocol → confidence `fact`.
+- Wrong `--expect-code` fails **immediately** with `expect-code-mismatch` (no timeout burn).
+- `pane dies mid-wait` → fails immediately with `pane-dead` / `pane-dead-by-signal` + respawn hint.
+- No shell integration (non-bash) → structured `no-shell-integration` error; fall back to
+  `--until` on the program's own output marker.
 
 ## Common Mistakes
 
-- **Literal vs control keys:** use `--type` for text, `--key` for special keys. Mixing them in
-  one string breaks TUI input.
-- **Racing the prompt:** sending `nano ...` before bash is ready fails silently. Always `wait`
-  for the prompt (`'\$ '`) first.
-- **Blind `sleep`:** don't. Use `wait --until`. Sleeps flake under load.
-- **Wrong screen size:** TUIs wrap/redraw by pane size; set `--width/--height` explicitly.
-- **Leaking sessions:** forgetting `stop` leaves orphan tmux sessions.
+- **`--type "cmd" --enter`**: v2 has no `--enter`. Always `--type "cmd" --key Enter` — text
+  and keys are separate calls, and Enter is a key.
+- **Trailing spaces**: the terminal rstrips lines, so `'your name: '` won't match raw text.
+  `--until` self-heals (matches rstripped text + a sentinel space) — trust it, and never
+  invent regexes that require trailing spaces to survive.
+- **Echo-anchored waits are untrustworthy**: you see your own typed text on screen.
+  Anchor on *output markers* (the program's response), not on what you sent, or use
+  `--cmd-done` (fact) instead.
+- **Spinners defeat quiet**: an animated line changes every 150 ms but a slow device can
+  sample identical frames ~600 ms apart (frame-cycle resonance). `--quiet-ms` gates on the
+  raw output stream's last-write time too, so it won't settle mid-animation — but anchor
+  with `--until` when the program has a known "done" marker.
+- **C-\\**: no key name exists; send raw bytes: `send --hex 1c`. Same for any byte without
+  a tmux key name.
+- **Stuck/echo-less screen**: a program may have mangled the tty (`stty -echo`). `send`
+  warns `tty-echo-broken` when your text produces no echo bytes; run `fix-tty`.
+- **Mouse apps**: `mouse-detect` first; `click X Y` is 1-based while curses programs print
+  0-based coords.
+- **Leaking sessions**: always `stop` (or `tmux kill-server` in test cleanup).
 
-## Worked Example — the proof (tmux + interactive bash + nano edits a file)
+## Anti-Cheating Red Lines
 
-```bash
-TD=/data/data/com.termux/files/home/agent-i/term_debug.py
-$TD start -n demo --cmd bash
-$TD wait  -n demo --until '\$ '                       # bash prompt ready
-$TD send  -n demo --type "nano /tmp/term-debug-proof.txt" --enter
-$TD wait  -n demo --until 'GNU nano'                   # editor opened
-$TD send  -n demo --type "Hello from term-debug via tmux + interactive bash"
-$TD send  -n demo --key C-o                            # save
-$TD wait  -n demo --until 'File Name to Write'
-$TD send  -n demo --key Enter
-$TD wait  -n demo --until 'Wrote .* lines'
-$TD send  -n demo --key C-x                            # exit
-$TD wait  -n demo --until '\$ '
-$TD stop  -n demo
-cat /tmp/term-debug-proof.txt                          # => contains the typed line
-$TD trace -n demo                                      # evidence of the whole run
-```
+- **Never** bypass the CLI by editing files the program owns, or by `Write`-ing the expected
+  output into place. The whole point is observing the program's real behavior.
+- **Never** claim a run happened without evidence: attach `trace` output (or the session's
+  `raw.log` events) and, for layout claims, the `screenshot` path.
+- Timeouts are data: report the `error` JSON (screen snapshot inside), don't swallow it.
 
-This demonstrates full control of a stateful full-screen TUI (nano) inside an interactive bash
-inside tmux — the canonical hard case for agent-driven terminal debugging.
+## Standard Scenarios
+
+1. **nano edit + run** (full-screen TUI): start → wait prompt → send `nano file` + Enter →
+   wait `GNU nano` → type text → `C-o` → wait `File Name to Write` → Enter →
+   wait `Wrote` → `C-x` → `--cmd-done` → verify file via ordinary `cat` (outside the pane).
+2. **REPL driving** (python/node): start REPL → wait its prompt via `--until` →
+   `--type` expression + Enter → read response via `screen`/`--grep`; exit via
+   `C-d` then `wait --exit --expect-code 0`.
+3. **todo.js double-bug repro** (JS project): run the failing program in the pane, wait for
+   the error via `--until`, capture `trace --format json` as the evidence bundle, fix code
+   with normal tools, re-run the same chain to prove the fix.
+4. **ink/bubbletea app (e.g. codebuddy CLI)**: start → `--quiet-ms 800` for the first paint
+   → `screen --runs`/`--element-at` to locate the input → `--type` message + Enter →
+   `--quiet-ms 1000` for the streamed answer → `Escape` (`--key Escape`) interrupts;
+   double-ESC restores input.
+
+## Tester Feedback Protocol
+
+If you were handed this skill as a blind tester: you have the right to complain — after any
+task, append a line `FEEDBACK: <what confused you / what was missing / what you had to guess>`
+to your output. Complaints feed directly into this skill's next revision.
