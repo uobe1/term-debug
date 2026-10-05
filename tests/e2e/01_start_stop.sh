@@ -40,7 +40,7 @@ s = json.load(open(sys.argv[1]))
 sock = sys.argv[2]
 assert s["pane_id"].startswith("%"), f"pane_id not %N: {s['pane_id']!r}"
 assert "shell_integration" in s, f"no shell_integration field: {sorted(s)}"
-assert s["shell_integration"] is False, f"shell_integration should be false here: {s}"
+assert s["shell_integration"] is True, f"bash sessions get OSC 133 injection: {s}"
 assert s["socket"] == sock, f"socket mismatch: {s['socket']!r} != {sock!r}"
 assert s["width"] == 100 and s["height"] == 30, f"size mismatch: {s}"
 PY

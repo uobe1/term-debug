@@ -10,6 +10,9 @@ Timeout never kills the target; it returns an evidence snapshot.
 import re
 import time
 
+from termdebug import osc133, records
+from termdebug.errors import TDError
+
 CONFIDENCE_ORDER = ("fact", "inference", "heuristic")  # strong -> weak
 
 
@@ -76,6 +79,43 @@ class AllOf(Condition):
     def to_json(self, met: bool) -> dict:
         return {**super().to_json(met),
                 "conditions": [c.to_json(met) for c in self.conditions]}
+
+
+class CmdDone(Condition):
+    """OSC 133 D marker after a C, scanned from raw.log since the last send.
+
+    fact confidence: the exit code comes from the shell protocol, not from
+    screen text. Expect-code mismatch fails immediately (never waits out the
+    timeout). Requires shell integration recorded in state.json.
+    """
+    label = "cmd-done"
+    confidence = "fact"
+
+    def __init__(self, session: str, expect_code: int | None = None):
+        self.session = session
+        self.expect_code = expect_code
+        self.exit_code: int | None = None
+
+    def _stream(self) -> str:
+        state = records.read_state(self.session)
+        return records.stream_since(self.session, state.get("last_send_offset", 0))
+
+    def evaluate(self, ctx) -> bool:
+        events = osc133.scan_stream(self._stream())
+        done = osc133.last_done(events)
+        if done is None:
+            return False
+        self.exit_code = done.get("code")
+        if self.expect_code is not None and self.exit_code != self.expect_code:
+            raise osc133.mismatch_error(
+                self.expect_code, self.exit_code,
+                {"exit_code": self.exit_code, "expected": self.expect_code,
+                 "screen": ctx.capture(0)})
+        return True
+
+    def to_json(self, met: bool) -> dict:
+        return {**super().to_json(met), "expect_code": self.expect_code,
+                "exit_code": self.exit_code if met else None}
 
 
 def timeout_evidence(ctx, condition: Condition) -> dict:

@@ -30,6 +30,27 @@ def read_state(session: str) -> dict:
     return json.loads(p.read_text())
 
 
+def stream_since(session: str, offset: int) -> str:
+    """Concatenate o-event payloads from raw.log starting at byte offset.
+
+    Only complete lines are considered; the offset must sit on a line
+    boundary (last_send_offset always does — senders write whole lines).
+    """
+    path = session_dir(session) / "raw.log"
+    out: list[str] = []
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        fh.seek(offset)
+        for line in fh:
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(ev, list) and len(ev) >= 3 and ev[1] == "o":
+                if isinstance(ev[2], str):
+                    out.append(ev[2])
+    return "".join(out)
+
+
 class V2Writer:
     """Appends events to raw.log and persists state.json atomically."""
 

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from termdebug import input as tdinput
-from termdebug import records, screen as tdscreen, tmuxio, waiting
+from termdebug import rcfile, records, screen as tdscreen, tmuxio, waiting
 from termdebug.errors import TDError
 
 PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
@@ -34,9 +34,18 @@ def cmd_start(args) -> int:
                       hint="pick another -n name or stop the existing session")
     writer = records.V2Writer.fresh(args.name, args.width, args.height,
                                     args.cmd, args.socket)
+    # Shell integration: bash sessions get an injected rcfile (OSC 133).
+    cmd = args.cmd
+    if cmd.split()[0].endswith("bash"):
+        system_bashrc = "/data/data/com.termux/files/usr/etc/bash.bashrc"
+        rc = writer.dir / "bashrc"
+        rc.write_text(rcfile.bashrc_template(system_bashrc))
+        cmd = f"bash --rcfile {shlex.quote(str(rc))} -i"
+        writer.state["shell_integration"] = True
+        writer.save_state()
     res = tmuxio.tmux("new-session", "-d", "-s", args.name,
                       "-x", str(args.width), "-y", str(args.height),
-                      args.cmd, socket=args.socket)
+                      cmd, socket=args.socket)
     tmuxio.require(res, "socket-unreachable")
     tmuxio.tmux("set-window-option", "-g", "-t", args.name,
                 "remain-on-exit", "on", socket=args.socket)
@@ -122,8 +131,9 @@ def cmd_screen(args) -> int:
 
 
 def cmd_wait(args) -> int:
-    # Regex condition here; --cmd-done / --exit / --quiet-ms land in Tasks 5-7.
+    # --until / --cmd-done here; --exit / --quiet-ms land in Tasks 6-7.
     target = resolve_target(args.name)
+    state = records.read_state(target.session)
 
     def capture(scrollback: int) -> str:
         flags = ("-S", str(-scrollback)) if scrollback else ()
@@ -135,9 +145,15 @@ def cmd_wait(args) -> int:
     conditions: list = []
     if args.until is not None:
         conditions.append(waiting.UntilRegex(args.until, args.scrollback))
+    if args.cmd_done:
+        if not state.get("shell_integration"):
+            raise TDError("no-shell-integration",
+                          f"session {target.session!r} has no OSC 133 injection",
+                          hint="start with --cmd bash to get shell integration")
+        conditions.append(waiting.CmdDone(target.session, args.expect_code))
     if not conditions:
         raise TDError("session-missing", "wait needs a condition",
-                      hint="use --until (more primitives land in Tasks 5-7)")
+                      hint="use --until or --cmd-done")
     cond = waiting.AllOf(conditions)
     ctx = waiting.WaitContext(capture, pane_meta)
 
@@ -154,10 +170,9 @@ def cmd_wait(args) -> int:
         if time.monotonic() >= deadline:
             break
         time.sleep(args.interval)
-    err = TDError("timeout",
+    raise TDError("timeout",
                   f"conditions not met within {args.timeout}s",
                   evidence=waiting.timeout_evidence(ctx, cond))
-    raise err
 
 
 def _not_implemented(args) -> int:
@@ -199,7 +214,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("wait", help="poll the screen until a regex matches")
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
-    p.add_argument("--until", required=True, help="regex to wait for")
+    p.add_argument("--until", default=None, help="regex to wait for")
+    p.add_argument("--cmd-done", action="store_true",
+                   help="wait for the OSC 133 command-done marker (fact)")
+    p.add_argument("--expect-code", type=int, default=None, metavar="N",
+                   help="with --cmd-done: fail immediately unless exit code == N")
     p.add_argument("--scrollback", type=int, default=0, metavar="N",
                    help="search N lines of history too (default: visible screen)")
     p.add_argument("--timeout", type=float, default=10.0, help="max seconds (default 10)")
