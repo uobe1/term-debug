@@ -61,17 +61,20 @@ def click(target: tmuxio.Target, x: int, y: int) -> None:
 
 
 def echo_broken(session: str, offset: int, text: str, window: float = 1.0) -> bool:
-    """True if the typed text produced no echo bytes within the window.
+    """True if typing produced no reaction within the window.
 
     A heuristic warning only: programs may legitimately disable ECHO
     (password prompts, line editors), so this never escalates to an error.
+    Any output activity counts as a reaction — full-screen TUIs redraw
+    instead of echoing, so "no echo but the program responded" is healthy.
     """
     probe = text[-8:]
     if not probe:
         return False
     deadline = time.monotonic() + window
     while time.monotonic() < deadline:
-        if probe in records.stream_since(session, offset):
+        new = records.stream_since(session, offset)
+        if probe in new or new.strip():
             return False
         time.sleep(0.05)
     return True

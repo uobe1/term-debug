@@ -431,6 +431,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("trace", help="project raw.log (human summary or raw NDJSON)")
     p.add_argument("-n", "--name", required=True, help="session name")
+    p.add_argument("--socket", default=None,
+                   help="accepted for target uniformity; trace reads local records")
     p.add_argument("--format", choices=["text", "json"], default="text")
     p.set_defaults(func=cmd_trace)
     return parser

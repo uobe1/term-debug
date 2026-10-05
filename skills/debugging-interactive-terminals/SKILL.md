@@ -95,8 +95,13 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
 ## Standard Scenarios
 
 1. **nano edit + run** (full-screen TUI): start → wait prompt → send `nano file` + Enter →
-   wait `GNU nano` → type text → `C-o` → wait `File Name to Write` → Enter →
-   wait `Wrote` → `C-x` → `--cmd-done` → verify file via ordinary `cat` (outside the pane).
+   wait `GNU nano` → type text → `C-o` → wait the save prompt (**version-dependent:
+   `File Name to Write` on older nano, `Write to File:` on nano 9+** — on timeout read
+   evidence.screen and re-anchor) → Enter → wait `Wrote` → `C-x` → `--cmd-done` → verify
+   the file via ordinary `cat` (outside the pane). Expect `tty-echo-broken` warnings to be
+   absent here: TUIs respond with redraws, which the warning logic treats as healthy.
+   Editor key behavior differs by program: `C-k`/`C-o`/`Down` are safe bets, but keys like
+   `End`/`Home` may be unbound in some editors — verify on screen instead of assuming.
 2. **REPL driving** (python/node): start REPL → wait its prompt via `--until` →
    `--type` expression + Enter → read response via `screen`/`--grep`; exit via
    `C-d` then `wait --exit --expect-code 0`.
