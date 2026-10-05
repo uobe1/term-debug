@@ -31,8 +31,12 @@ OFF2="$(get_offset)"
 
 # --- roundtrip: wait for output, assert screen shows it ---
 $TD wait -n "$NAME" --until 'TD2_OK' --timeout 5 >/dev/null || fail "wait --until TD2_OK did not match"
-tmux -L "$SOCK" capture-pane -p -t "$NAME" 2>/dev/null | grep -q "TD2_OK" \
-  || fail "screen does not contain TD2_OK"
+SCREEN="$(tmux -L "$SOCK" capture-pane -p -t "$NAME" 2>/dev/null)"
+echo "$SCREEN" | grep -q "TD2_OK" || fail "screen does not contain TD2_OK"
+# option-order red line: send-keys must never leak "-t <name>" into the pane
+if echo "$SCREEN" | grep -q -- "-t$NAME"; then
+  fail "pane polluted by literal -t target (send-keys option order bug)"
+fi
 
 # --- evidence: i-events recorded, Enter logged ---
 grep -qE '\["?i"?|"i"' "$DIR/raw.log" && grep -E '^\[.*"i".*"Enter"' "$DIR/raw.log" >/dev/null \

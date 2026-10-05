@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from termdebug import input as tdinput
-from termdebug import records, tmuxio
+from termdebug import records, screen as tdscreen, tmuxio
 from termdebug.errors import TDError
 
 PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
@@ -48,7 +48,7 @@ def cmd_start(args) -> int:
     # Recorder: pane output stream -> raw.log as v2 o-events.
     raw = shlex.quote(str(writer.dir / "raw.log"))
     tmuxio.tmux("pipe-pane", "-o", "-t", pane_id,
-                "-F", f"{sys.executable} {PIPE_SCRIPT} {raw}", socket=args.socket)
+                f"{sys.executable} {PIPE_SCRIPT} {raw}", socket=args.socket)
     print(json.dumps({"ok": True, "session": args.name, "socket": args.socket,
                       "pane_id": pane_id, "width": args.width,
                       "height": args.height}, ensure_ascii=False))
@@ -85,10 +85,46 @@ def cmd_send(args) -> int:
     return 0
 
 
+def cmd_screen(args) -> int:
+    target = resolve_target(args.name)
+    if args.meta:
+        state = records.read_state(target.session)
+        m = tmuxio.meta(target)
+        m.update(session=target.session, pane_id=state.get("pane_id"))
+        print(json.dumps(m, ensure_ascii=False))
+        return 0
+    flags = []
+    if args.keep_trailing:
+        flags.append("-N")
+    if args.join:
+        flags.append("-J")
+    if args.scrollback is not None:
+        flags += ["-S", str(-args.scrollback)]
+    if args.element_at is not None or args.grid or args.runs or args.grep:
+        text = tmuxio.capture(target, tuple(flags + ["-e"]))
+        grid = tdscreen.parse_grid(text)
+        if args.element_at is not None:
+            x, y = args.element_at
+            print(json.dumps(tdscreen.cell_at(grid, x, y), ensure_ascii=False))
+        elif args.grid:
+            print(json.dumps(grid, ensure_ascii=False))
+        elif args.runs:
+            print(json.dumps(tdscreen.rows_to_runs(grid), ensure_ascii=False))
+        elif args.grep:
+            if args.fg is None and args.bg is None and not args.attr:
+                raise TDError("session-missing", "--grep needs at least one of --fg/--bg/--attr")
+            for row in grid:
+                if tdscreen.row_matches(row, args.fg, args.bg, args.attr or ()):
+                    print(tdscreen.grid_row_text(row))
+        return 0
+    print(tmuxio.capture(target, tuple(flags)), end="")
+    return 0
+
+
 def cmd_wait(args) -> int:
     # Minimal regex-poll wait; the full verdict engine lands in waiting.py (Task 4).
     target = resolve_target(args.name)
-    pattern = re.compile(args.until, re.DOTALL)
+    pattern = re.compile(args.until, re.DOTALL | re.MULTILINE)
     deadline = time.monotonic() + args.timeout
     screen = ""
     matched = False
@@ -153,7 +189,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--interval", type=float, default=0.1, help="poll interval (default 0.1)")
     p.set_defaults(func=cmd_wait)
 
-    for name in ("screen", "sessions", "trace",
+    p = sub.add_parser("screen", help="observe the pane: text, meta, SGR grid/runs")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--meta", action="store_true", help="pane status JSON (cursor/modes/history)")
+    p.add_argument("-N", "--keep-trailing", action="store_true", help="keep trailing spaces")
+    p.add_argument("-J", "--join", action="store_true", help="join wrapped lines into logical lines")
+    p.add_argument("--scrollback", type=int, metavar="N", help="include N lines of history")
+    p.add_argument("--grid", action="store_true", help="SGR cell grid JSON")
+    p.add_argument("--runs", action="store_true", help="attribute run view JSON")
+    p.add_argument("--grep", action="store_true", help="print rows matching --fg/--bg/--attr")
+    p.add_argument("--fg", default=None, metavar="COLOR")
+    p.add_argument("--bg", default=None, metavar="COLOR")
+    p.add_argument("--attr", action="append", metavar="A", help="e.g. bold, reverse (repeatable)")
+    p.add_argument("--element-at", nargs=2, type=int, metavar=("X", "Y"), help="single cell JSON")
+    p.set_defaults(func=cmd_screen)
+
+    for name in ("sessions", "trace",
                  "fix-tty", "screenshot", "mouse-detect"):
         # Real options are added as each subcommand gets implemented.
         p = sub.add_parser(name, help=name)

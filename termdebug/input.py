@@ -18,7 +18,9 @@ KNOWN_KEYS = frozenset({
 
 
 def _run_or_die(target: tmuxio.Target, args: list[str], what: str) -> None:
-    res = tmuxio.tmux("send-keys", *args, "-t", target.to_arg(), socket=target.socket)
+    # tmux parses options strictly before positionals: -t must come first,
+    # otherwise it lands in the pane as literal keys.
+    res = tmuxio.tmux("send-keys", "-t", target.to_arg(), *args, socket=target.socket)
     if res.returncode != 0:
         raise TDError("session-missing", res.stderr.strip() or f"send-keys failed: {what}")
 
