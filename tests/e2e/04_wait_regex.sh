@@ -23,9 +23,11 @@ OUT="$($TD wait -n "$NAME" --until 'TD4: ' --timeout 5)" || fail "wait 'TD4: ' (
 echo "$OUT" | python3 -c '
 import json, sys
 v = json.load(sys.stdin)
-assert v["confidence"] == "inference", f"until must be inference: {v}"
 assert v["verdict"] == "met", f"verdict: {v}"
-assert v["conditions"][0]["type"] == "until", f"conditions: {v}"
+c = v["conditions"][0]
+assert c["type"] == "until", f"conditions: {v}"
+assert c["echo_suspect"] is True, f"echo downgrade should fire: {v}"
+assert v["confidence"] == "heuristic", f"echo-suspect must degrade: {v}"
 ' || fail "verdict JSON invalid (see assertion above)"
 
 # --- timeout returns structured evidence, non-zero exit ---

@@ -27,7 +27,9 @@ events = [l for l in lines if isinstance(l, list)]
 codes = {e[1] for e in events}
 assert {"o", "i", "m"} <= codes, f"missing event kinds: {codes}"
 ts = [e[0] for e in events]
-assert ts == sorted(ts), f"timestamps not monotonic: {ts}"
+# i-events (client) and o-events (pipe wrapper) are concurrent writers:
+# near-simultaneous lines may swap, allow a small negative tolerance.
+assert all(b >= a - 0.1 for a, b in zip(ts, ts[1:])), f"timestamps wild: {ts}"
 m_events = [e for e in events if e[1] == "m"]
 assert any(e[2].get("event") == "wait-met" for e in m_events), m_events
 PY
