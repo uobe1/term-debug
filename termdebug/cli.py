@@ -21,12 +21,39 @@ PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
 
 
 def resolve_target(name: str) -> tmuxio.Target:
-    """Resolve a CLI -n argument to a full target; socket falls back to state.json."""
+    """Resolve a CLI -n argument to a full target; socket falls back to state.json.
+
+    An explicit socket in the target (inner:inner:0) wins — nested tmux panes
+    are addressable without being term-debug-managed.
+    """
     t = tmuxio.parse_target(name)
     if t.socket is None:
         t = tmuxio.Target(records.read_state(t.session).get("socket"),
                           t.session, t.window, t.pane)
     return t
+
+
+def load_state_or_none(session: str) -> dict | None:
+    try:
+        return records.read_state(session)
+    except TDError:
+        return None
+
+
+def cmd_sessions(args) -> int:
+    res = tmuxio.tmux("list-sessions", "-F",
+                      "#{session_name}|#{session_windows}|#{session_attached}",
+                      socket=args.socket)
+    rows = []
+    if res.returncode == 0:
+        for line in res.stdout.splitlines():
+            parts = line.split("|")
+            if len(parts) >= 1 and parts[0]:
+                rows.append({"name": parts[0],
+                             "windows": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None,
+                             "attached": parts[2:] and parts[2] == "1"})
+    print(json.dumps(rows, ensure_ascii=False))
+    return 0
 
 
 def cmd_start(args) -> int:
@@ -85,18 +112,22 @@ def cmd_stop(args) -> int:
 
 def cmd_send(args) -> int:
     target = resolve_target(args.name)
-    state = records.read_state(target.session)
+    state = load_state_or_none(target.session)
     writer = records.V2Writer(target.session)
     offset = writer.size()  # where output caused by this send starts
     events = tdinput.send(target, args.type or [], args.key or [], args.hex or [])
-    writer.append("i", events)
-    state["last_send_offset"] = offset
-    writer.state = state
-    writer.save_state()
-    result = {"ok": True, "sent": events, "offset": offset}
     sent_text = "".join(args.type or [])
-    if sent_text and tdinput.echo_broken(target.session, offset, sent_text):
-        result["warning"] = "tty-echo-broken"
+    warning = None
+    if state is not None:
+        writer.append("i", events)
+        state["last_send_offset"] = offset
+        writer.state = state
+        writer.save_state()
+        if sent_text and tdinput.echo_broken(target.session, offset, sent_text):
+            warning = "tty-echo-broken"
+    result = {"ok": True, "sent": events, "offset": offset}
+    if warning:
+        result["warning"] = warning
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -158,7 +189,7 @@ def cmd_screen(args) -> int:
 def cmd_wait(args) -> int:
     # --until / --cmd-done here; --exit / --quiet-ms land in Tasks 6-7.
     target = resolve_target(args.name)
-    state = records.read_state(target.session)
+    state = load_state_or_none(target.session) or {}
 
     def capture(scrollback: int) -> str:
         flags = ("-S", str(-scrollback)) if scrollback else ()
@@ -185,13 +216,14 @@ def cmd_wait(args) -> int:
                       hint="use --until, --cmd-done, --exit or --quiet-ms")
     cond = waiting.AllOf(conditions)
     ctx = waiting.WaitContext(capture, pane_meta)
-    writer = records.V2Writer(target.session)
+    writer = records.V2Writer(target.session) if state else None
 
     deadline = time.monotonic() + args.timeout
     while True:
         if cond.evaluate(ctx):
-            writer.append("m", {"event": "wait-met",
-                                "confidence": cond.confidence})
+            if writer is not None:
+                writer.append("m", {"event": "wait-met",
+                                    "confidence": cond.confidence})
             print(json.dumps({
                 "verdict": "met",
                 "confidence": cond.confidence,
@@ -338,7 +370,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", required=True, metavar="PATH", help="output file path")
     p.set_defaults(func=cmd_screenshot)
 
-    for name in ("sessions", "trace"):
+    p = sub.add_parser("sessions", help="list tmux sessions on a socket")
+    p.add_argument("--socket", default=None, help="tmux socket name (-L); default socket if omitted")
+    p.set_defaults(func=cmd_sessions)
+
+    for name in ("trace",):
         # Real options are added as each subcommand gets implemented.
         p = sub.add_parser(name, help=name)
         p.add_argument("args", nargs="*", help=argparse.SUPPRESS)

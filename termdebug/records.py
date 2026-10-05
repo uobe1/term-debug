@@ -113,4 +113,7 @@ class V2Writer:
             fh.write(line)
 
     def size(self) -> int:
-        return self.path.stat().st_size
+        try:
+            return self.path.stat().st_size
+        except FileNotFoundError:
+            return 0
