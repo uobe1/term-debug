@@ -281,6 +281,44 @@ def cmd_screenshot(args) -> int:
     return 0
 
 
+def cmd_trace(args) -> int:
+    path = records.session_dir(args.name) / "raw.log"
+    if not path.exists():
+        raise TDError("session-missing",
+                      f"no raw.log for session {args.name!r}",
+                      hint="run: term_debug.py start -n <name> --cmd <command>")
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            ev = json.loads(line)
+            if args.format == "json":
+                print(json.dumps(ev, ensure_ascii=False))
+                continue
+            if isinstance(ev, dict):  # v2 header
+                print(f"# v{ev.get('version')} {ev.get('width')}x{ev.get('height')}"
+                      f" cmd={ev.get('cmd')!r} socket={ev.get('env') and '' or ''}")
+                continue
+            ts, code, data = ev
+            if code == "o":
+                preview = data.replace("\n", "\\n")[:48]
+                print(f"[{ts:9.3f}] o {len(data):5d}B {preview!r}")
+            elif code == "i":
+                parts = []
+                for e in data:
+                    if "text" in e:
+                        parts.append(f"type={e['text']!r}")
+                    elif "key" in e:
+                        parts.append(f"key={e['key']}")
+                    elif "hex" in e:
+                        parts.append(f"hex={e['hex']}")
+                print(f"[{ts:9.3f}] i {' '.join(parts)}")
+            elif code == "m":
+                name = data.get("event") if isinstance(data, dict) else None
+                print(f"[{ts:9.3f}] m {name or json.dumps(data, ensure_ascii=False)}")
+            else:
+                print(f"[{ts:9.3f}] {code} {data!r}")
+    return 0
+
+
 def _not_implemented(args) -> int:
     raise TDError(
         "not-implemented",
@@ -374,11 +412,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--socket", default=None, help="tmux socket name (-L); default socket if omitted")
     p.set_defaults(func=cmd_sessions)
 
-    for name in ("trace",):
-        # Real options are added as each subcommand gets implemented.
-        p = sub.add_parser(name, help=name)
-        p.add_argument("args", nargs="*", help=argparse.SUPPRESS)
-        p.set_defaults(func=_not_implemented)
+    p = sub.add_parser("trace", help="project raw.log (human summary or raw NDJSON)")
+    p.add_argument("-n", "--name", required=True, help="session name")
+    p.add_argument("--format", choices=["text", "json"], default="text")
+    p.set_defaults(func=cmd_trace)
     return parser
 
 
