@@ -12,7 +12,9 @@ import time
 from pathlib import Path
 
 from termdebug import input as tdinput
-from termdebug import rcfile, records, screen as tdscreen, tmuxio, waiting
+from termdebug import rcfile, records, screen as tdscreen
+from termdebug import screenshot as tdscreenshot
+from termdebug import tmuxio, waiting
 from termdebug.errors import TDError
 
 PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
@@ -232,6 +234,21 @@ def cmd_click(args) -> int:
     return 0
 
 
+def cmd_screenshot(args) -> int:
+    target = resolve_target(args.name)
+    text = tmuxio.capture(target, ("-e",))
+    grid = tdscreen.parse_grid(text)
+    try:
+        info = tdscreenshot.render(grid, args.o, args.format)
+    except ImportError:
+        raise TDError("pillow-missing",
+                      "Pillow is required for the image channel",
+                      hint="pkg install python-pillow (or: pip install Pillow)")
+    print(json.dumps({"ok": True, "format": args.format, **info},
+                     ensure_ascii=False))
+    return 0
+
+
 def _not_implemented(args) -> int:
     raise TDError(
         "not-implemented",
@@ -315,7 +332,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
     p.set_defaults(func=cmd_fix_tty)
 
-    for name in ("sessions", "trace", "screenshot"):
+    p = sub.add_parser("screenshot", help="render the pane to png/jpg (Pillow)")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--format", choices=["png", "jpg"], default="png")
+    p.add_argument("-o", required=True, metavar="PATH", help="output file path")
+    p.set_defaults(func=cmd_screenshot)
+
+    for name in ("sessions", "trace"):
         # Real options are added as each subcommand gets implemented.
         p = sub.add_parser(name, help=name)
         p.add_argument("args", nargs="*", help=argparse.SUPPRESS)
