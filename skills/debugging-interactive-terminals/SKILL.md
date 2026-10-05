@@ -135,11 +135,18 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    streams, and distinguishes it from the `preparing`/`waiting for model` phases; the
    rewind menu's checkpoint rows contain `ago` if you need an anchor there) → `Escape`
    (`--key Escape`) interrupts
-   (`└ Interrupted by user`); double-ESC opens the rewind/resume menu — **two separate
-   `send --key Escape` calls ~0.2s apart** (faster or slower won't trigger it; its live
-   "N s ago" timestamps repaint every second — wait with `--until` anchors, not quiet).
-   **Exit** needs a double C-c within a short window (single C-c or a long gap does
-   nothing); confirm with `--cmd-done`.
+   (`└ Interrupted by user`); double-ESC opens the rewind/resume menu — **one
+   `send --key Escape --key Escape` call (both keys in a single invocation, 0ms apart);
+   if that doesn't trigger it, try two separate calls ~0.2s apart** (the app's debounce
+   window is picky; its live "N s ago" timestamps repaint every second — wait with
+   `--until` anchors, not quiet). **Exit** needs a double C-c, and here the rhythm is the
+   opposite: a single call with two C-c's does NOT work — use two separate
+   `send --key C-c` calls with a short sleep (0.3-0.5s; **err on the short side** — the
+   app's double-tap window is <1s of *key-event* time, and each CLI invocation's startup
+   inflates the gap, so sleep 1 misses it); confirm with `--cmd-done`. Note that
+   restarting the app in the same pane leaves stale frames that fake-settle short quiets
+   and re-match old `--until` anchors — use a longer quiet (~2.5s) or anchor on
+   new-frame-only features (the `>` input box).
 
 ## Tester Feedback Protocol
 
