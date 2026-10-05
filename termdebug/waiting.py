@@ -118,6 +118,61 @@ class CmdDone(Condition):
                 "exit_code": self.exit_code if met else None}
 
 
+class ExitCondition(Condition):
+    """Pane death via remain-on-exit: pane_dead / status / signal. fact."""
+
+    label = "exit"
+    confidence = "fact"
+
+    def __init__(self, expect_code: int | None = None):
+        self.expect_code = expect_code
+        self.exit_code: int | None = None
+
+    def evaluate(self, ctx) -> bool:
+        m = ctx.meta()
+        if not m.get("pane_dead"):
+            return False
+        signal = m.get("pane_dead_signal")
+        if signal:
+            raise TDError(
+                "pane-dead-by-signal",
+                f"pane killed by signal {signal}",
+                hint="respawn with: term_debug.py start -n <name> --cmd <command> "
+                     "(then re-run your scenario)",
+                evidence={"signal": signal, "screen": ctx.capture(0)},
+            )
+        self.exit_code = m.get("pane_dead_status")
+        if self.expect_code is not None and self.exit_code != self.expect_code:
+            raise osc133.mismatch_error(
+                self.expect_code, self.exit_code,
+                {"exit_code": self.exit_code, "expected": self.expect_code,
+                 "screen": ctx.capture(0)})
+        return True
+
+    def to_json(self, met: bool) -> dict:
+        return {**super().to_json(met), "expect_code": self.expect_code,
+                "exit_code": self.exit_code if met else None}
+
+
+def pane_dead_error(ctx) -> TDError:
+    """Unexpected pane death during a wait that wasn't --exit (EOF early-termination)."""
+    m = ctx.meta()
+    signal = m.get("pane_dead_signal")
+    if signal:
+        return TDError(
+            "pane-dead-by-signal",
+            f"pane killed by signal {signal} while waiting",
+            hint="respawn with: term_debug.py start -n <name> --cmd <command>",
+            evidence={"signal": signal, "screen": ctx.capture(0)},
+        )
+    return TDError(
+        "pane-dead",
+        f"pane exited (status {m.get('pane_dead_status')}) while waiting",
+        hint="use --exit --expect-code N to wait for pane death on purpose",
+        evidence={"exit_code": m.get("pane_dead_status"), "screen": ctx.capture(0)},
+    )
+
+
 def timeout_evidence(ctx, condition: Condition) -> dict:
     """Evidence snapshot for an unmet wait: screen, cursor, condition state."""
     screen = ctx.capture(0)

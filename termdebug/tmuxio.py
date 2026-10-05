@@ -84,12 +84,16 @@ def meta(target: Target) -> dict:
     keys = ("cursor_x", "cursor_y", "alternate_on", "pane_in_mode",
             "history_size", "pane_dead", "pane_dead_status", "pane_dead_signal")
     d: dict = {}
+    bool_keys = {"alternate_on", "pane_in_mode", "pane_dead"}
+    int_keys = {"cursor_x", "cursor_y", "history_size", "pane_dead_status"}
     for i, k in enumerate(keys):
         v = out[i] if i < len(out) else ""
         if v == "":
             d[k] = None
-        elif k in ("cursor_x", "cursor_y", "history_size", "pane_dead_status", "pane_dead_signal"):
-            d[k] = int(v)
-        else:
+        elif k in bool_keys:
             d[k] = v == "1"
+        elif k in int_keys:
+            d[k] = int(v)
+        else:  # e.g. pane_dead_signal is a name like "KILL"
+            d[k] = v
     return d

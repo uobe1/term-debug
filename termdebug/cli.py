@@ -43,12 +43,14 @@ def cmd_start(args) -> int:
         cmd = f"bash --rcfile {shlex.quote(str(rc))} -i"
         writer.state["shell_integration"] = True
         writer.save_state()
+    # remain-on-exit must be set *inside* the pane before exec: short-lived
+    # commands would otherwise die (and take the session with them) before
+    # the external set-option lands.
+    inner = f"tmux set-option -w remain-on-exit on; exec {cmd}"
     res = tmuxio.tmux("new-session", "-d", "-s", args.name,
                       "-x", str(args.width), "-y", str(args.height),
-                      cmd, socket=args.socket)
+                      inner, socket=args.socket)
     tmuxio.require(res, "socket-unreachable")
-    tmuxio.tmux("set-window-option", "-g", "-t", args.name,
-                "remain-on-exit", "on", socket=args.socket)
     pane_id = tmuxio.require(
         tmuxio.tmux("display-message", "-p", "-t", args.name, "-F", "#{pane_id}",
                     socket=args.socket)).strip()
@@ -151,9 +153,11 @@ def cmd_wait(args) -> int:
                           f"session {target.session!r} has no OSC 133 injection",
                           hint="start with --cmd bash to get shell integration")
         conditions.append(waiting.CmdDone(target.session, args.expect_code))
+    if args.exit:
+        conditions.append(waiting.ExitCondition(args.expect_code))
     if not conditions:
         raise TDError("session-missing", "wait needs a condition",
-                      hint="use --until or --cmd-done")
+                      hint="use --until, --cmd-done or --exit")
     cond = waiting.AllOf(conditions)
     ctx = waiting.WaitContext(capture, pane_meta)
 
@@ -167,6 +171,12 @@ def cmd_wait(args) -> int:
                 "evidence": {"screen": capture(0)},
             }, ensure_ascii=False))
             return 0
+        # EOF early-termination: a dead pane can never satisfy --until or
+        # --cmd-done, so fail immediately instead of burning the timeout.
+        if not args.exit and not any(
+                isinstance(c, waiting.ExitCondition) for c in cond.conditions):
+            if pane_meta().get("pane_dead"):
+                raise waiting.pane_dead_error(ctx)
         if time.monotonic() >= deadline:
             break
         time.sleep(args.interval)
@@ -217,8 +227,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--until", default=None, help="regex to wait for")
     p.add_argument("--cmd-done", action="store_true",
                    help="wait for the OSC 133 command-done marker (fact)")
+    p.add_argument("--exit", action="store_true",
+                   help="wait for the pane to exit (remain-on-exit, fact)")
     p.add_argument("--expect-code", type=int, default=None, metavar="N",
-                   help="with --cmd-done: fail immediately unless exit code == N")
+                   help="with --cmd-done/--exit: fail immediately unless exit code == N")
     p.add_argument("--scrollback", type=int, default=0, metavar="N",
                    help="search N lines of history too (default: visible screen)")
     p.add_argument("--timeout", type=float, default=10.0, help="max seconds (default 10)")
