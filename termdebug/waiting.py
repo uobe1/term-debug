@@ -287,10 +287,13 @@ class QuietCondition(Condition):
             self._last = sample  # never settle mid-synchronized-update
             return False
         # Gate 1: real output activity — how long since the pane emitted?
+        # 25% margin: a spinner whose frame period exactly equals the quiet
+        # interval would otherwise settle at the instant just before the
+        # next frame lands.
         if self._last_o_ts is None:
             return False
         idle = (time.time() - self.t0) - self._last_o_ts
-        if idle < self.interval:
+        if idle < self.interval * 1.25:
             self._last = sample
             return False
         # Gate 2: screen snapshot stability across spaced samples.

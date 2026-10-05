@@ -79,8 +79,13 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   session for sensitive experiments.
 - **Spinners defeat quiet**: an animated line changes every 150 ms but a slow device can
   sample identical frames ~600 ms apart (frame-cycle resonance). `--quiet-ms` gates on the
-  raw output stream's last-write time too, so it won't settle mid-animation — but anchor
-  with `--until` when the program has a known "done" marker.
+  raw output stream's last-write time too (with a 25% margin), so it won't settle while a
+  spinner runs — but a spinner that paints exactly once per quiet-ms sits at the margin's
+  edge: prefer `--quiet-ms` at least 2-3x the observed frame period, and anchor with
+  `--until` when the program has a known "done" marker. A stream that starts *thinking*
+  (spinner on) after you sent a message can also false-settle a large quiet value — wait
+  for the stream to actually start (`--until` on the streaming indicator) before trusting
+  quiet for its end.
 - **C-\\**: no key name exists; send raw bytes: `send --hex 1c`. Same for any byte without
   a tmux key name.
 - **Stuck/echo-less screen**: a program may have mangled the tty (`stty -echo`). `send`
@@ -125,8 +130,11 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    shows a **trust dialog** ("Do you trust the files in this folder?") — Enter through it
    before expecting the real first screen. Then `--quiet-ms 800` for the first paint →
    `screen --runs`/`--element-at` to locate the input → `--type` message + Enter →
-   `--quiet-ms 1000` for the streamed answer → `Escape` (`--key Escape`) interrupts
-   (`└ Interrupted by user`); double-ESC opens the rewind/resume menu (note: its live
+   after the answer starts streaming, wait for its end with `--quiet-ms 1500` (streamed
+   text bursts leave >1s gaps; anchor `--until` on the streaming indicator first so the
+   thinking phase can't false-settle) → `Escape` (`--key Escape`) interrupts
+   (`└ Interrupted by user`); double-ESC opens the rewind/resume menu — **two separate
+   `send --key Escape` calls ~0.2s apart** (faster or slower won't trigger it; its live
    "N s ago" timestamps repaint every second — wait with `--until` anchors, not quiet).
    **Exit** needs a double C-c within a short window (single C-c or a long gap does
    nothing); confirm with `--cmd-done`.
