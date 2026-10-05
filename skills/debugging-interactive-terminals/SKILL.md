@@ -87,7 +87,9 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   for the stream to actually start (`--until` on the streaming indicator) before trusting
   quiet for its end. **Menu screens are quiet-hostile too**: modal pickers (model list,
   dialogs) repaint on a timer, so inside menus use `sleep 0.5-1` + `screen` instead of
-  `--quiet-ms`.
+  `--quiet-ms`. Menu arrow keys also debounce: `send --key Up --key Up` in one call moves
+  the selection **once** — send each arrow as its own call with ~0.35s between calls
+  (same rhythm family as the double-tap notes in scenario 4).
 - **C-\\**: no key name exists; send raw bytes: `send --hex 1c`. Same for any byte without
   a tmux key name. Multi-byte sequences work too (`--hex 1b5b31333b3275` = kitty
   Shift+Enter) — tmux's `-H` takes one byte per argument, so the CLI splits the string
@@ -130,7 +132,9 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    with normal tools, re-run the same chain to prove the fix.
 4. **ink/bubbletea app (e.g. codebuddy CLI)**: launch inside the pane with
    `unset SERVER__PORT CODEBUDDY_SERVICE_PROXY_URL` first (inherited agent env makes the
-   TUI silently never mount — zero bytes after the command echo). A fresh directory first
+   TUI silently never mount — zero bytes after the command echo). **Don't `exec` the
+   app** — replacing bash kills the OSC 133 reporter, so `--cmd-done` can never fire
+   (pane death becomes the only exit signal). A fresh directory first
    shows a **trust dialog** ("Do you trust the files in this folder?") — Enter through it
    before expecting the real first screen. Then `--quiet-ms 800` for the first paint →
    `screen --runs`/`--element-at` to locate the input → `--type` message + Enter →
