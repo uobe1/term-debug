@@ -85,7 +85,9 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   `--until` when the program has a known "done" marker. A stream that starts *thinking*
   (spinner on) after you sent a message can also false-settle a large quiet value — wait
   for the stream to actually start (`--until` on the streaming indicator) before trusting
-  quiet for its end.
+  quiet for its end. **Menu screens are quiet-hostile too**: modal pickers (model list,
+  dialogs) repaint on a timer, so inside menus use `sleep 0.5-1` + `screen` instead of
+  `--quiet-ms`.
 - **C-\\**: no key name exists; send raw bytes: `send --hex 1c`. Same for any byte without
   a tmux key name. Multi-byte sequences work too (`--hex 1b5b31333b3275` = kitty
   Shift+Enter) — tmux's `-H` takes one byte per argument, so the CLI splits the string
@@ -135,7 +137,10 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    after the answer starts streaming, wait for its end with `--quiet-ms 1500` (anchor
    `--until 'streaming'` first — that word is in codebuddy's status line while text
    streams, and distinguishes it from the `preparing`/`waiting for model` phases; the
-   rewind menu's checkpoint rows contain `ago` if you need an anchor there) → `Escape`
+   rewind menu's checkpoint rows contain `ago` if you need an anchor there). **Short
+   answers may finish before you ever catch `streaming`, and the idle UI repaints
+   periodically so quiet never settles** — in that case just poll `screen` for the answer
+   block (lines starting with `●`) instead of burning waits → `Escape`
    (`--key Escape`) interrupts
    (`└ Interrupted by user`); double-ESC opens the rewind/resume menu — **one
    `send --key Escape --key Escape` call (both keys in a single invocation, 0ms apart);

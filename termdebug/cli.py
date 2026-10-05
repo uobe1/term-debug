@@ -98,7 +98,18 @@ def cmd_start(args) -> int:
 
 
 def cmd_stop(args) -> int:
-    state = records.read_state(args.name)
+    state = load_state_or_none(args.name)
+    if state is None:
+        # Degraded cleanup: records are unreachable (cache mismatch), but the
+        # tmux session itself can still be killed — cleanup must never require
+        # forensics. Only the session *name* is known without state.json, so
+        # the kill happens on the default socket unless --socket overrides.
+        res = tmuxio.tmux("kill-session", "-t", args.name,
+                          socket=getattr(args, "socket", None))
+        tmuxio.require(res, "session-missing")
+        print(json.dumps({"ok": True, "session": args.name, "degraded": True},
+                         ensure_ascii=False))
+        return 0
     writer = records.V2Writer(state["session"])
     res = tmuxio.tmux("kill-session", "-t", state["session"], socket=state.get("socket"))
     if res.returncode != 0:
