@@ -5,10 +5,13 @@ All failures surface as single-line JSON errors (termdebug.errors.TDError).
 """
 import argparse
 import json
+import re
 import shlex
 import sys
+import time
 from pathlib import Path
 
+from termdebug import input as tdinput
 from termdebug import records, tmuxio
 from termdebug.errors import TDError
 
@@ -67,6 +70,45 @@ def cmd_stop(args) -> int:
     return 0
 
 
+def cmd_send(args) -> int:
+    target = resolve_target(args.name)
+    state = records.read_state(target.session)
+    writer = records.V2Writer(target.session)
+    offset = writer.size()  # where output caused by this send starts
+    events = tdinput.send(target, args.type or [], args.key or [], args.hex or [])
+    writer.append("i", events)
+    state["last_send_offset"] = offset
+    writer.state = state
+    writer.save_state()
+    print(json.dumps({"ok": True, "sent": events, "offset": offset},
+                     ensure_ascii=False))
+    return 0
+
+
+def cmd_wait(args) -> int:
+    # Minimal regex-poll wait; the full verdict engine lands in waiting.py (Task 4).
+    target = resolve_target(args.name)
+    pattern = re.compile(args.until, re.DOTALL)
+    deadline = time.monotonic() + args.timeout
+    screen = ""
+    matched = False
+    while True:
+        screen = tmuxio.capture(target)
+        # Self-heal: match against rstripped text too (trailing-space red line).
+        if pattern.search(screen) or pattern.search("\n".join(
+                line.rstrip() for line in screen.splitlines())):
+            matched = True
+            break
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(args.interval)
+    if matched:
+        print(json.dumps({"ok": True, "matched": args.until}, ensure_ascii=False))
+        return 0
+    raise TDError("timeout", f"no match for {args.until!r} within {args.timeout}s",
+                  evidence={"screen": screen})
+
+
 def _not_implemented(args) -> int:
     raise TDError(
         "not-implemented",
@@ -94,7 +136,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-n", "--name", required=True, help="session name (or target)")
     p.set_defaults(func=cmd_stop)
 
-    for name in ("send", "screen", "wait", "sessions", "trace",
+    p = sub.add_parser("send", help="inject text/keys (always split into separate calls)")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--type", action="append", metavar="TEXT",
+                   help="literal text to type (repeatable, sent before keys)")
+    p.add_argument("--key", action="append", metavar="KEY",
+                   help="key name e.g. Enter Escape C-c (repeatable)")
+    p.add_argument("--hex", action="append", metavar="HEX",
+                   help="raw byte via send-keys -H e.g. 1c for C-\\ (repeatable)")
+    p.set_defaults(func=cmd_send)
+
+    p = sub.add_parser("wait", help="poll the screen until a regex matches")
+    p.add_argument("-n", "--name", required=True, help="session name (or target)")
+    p.add_argument("--until", required=True, help="regex to wait for")
+    p.add_argument("--timeout", type=float, default=10.0, help="max seconds (default 10)")
+    p.add_argument("--interval", type=float, default=0.1, help="poll interval (default 0.1)")
+    p.set_defaults(func=cmd_wait)
+
+    for name in ("screen", "sessions", "trace",
                  "fix-tty", "screenshot", "mouse-detect"):
         # Real options are added as each subcommand gets implemented.
         p = sub.add_parser(name, help=name)
