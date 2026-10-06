@@ -130,38 +130,44 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
 3. **todo.js double-bug repro** (JS project): run the failing program in the pane, wait for
    the error via `--until`, capture `trace --format json` as the evidence bundle, fix code
    with normal tools, re-run the same chain to prove the fix.
-4. **ink/bubbletea app (e.g. codebuddy CLI)**: launch inside the pane with
-   `unset SERVER__PORT CODEBUDDY_SERVICE_PROXY_URL` first (inherited agent env makes the
-   TUI silently never mount — zero bytes after the command echo). **Don't `exec` the
-   app** — replacing bash kills the OSC 133 reporter, so `--cmd-done` can never fire
-   (pane death becomes the only exit signal). A fresh directory first
-   shows a **trust dialog** ("Do you trust the files in this folder?") — Enter through it
-   before expecting the real first screen. Then `--quiet-ms 800` for the first paint →
-   `screen --runs`/`--element-at` to locate the input → `--type` message + Enter →
-   after the answer starts streaming, wait for its end with `--quiet-ms 1500` (anchor
-   `--until 'streaming'` first — that word is in codebuddy's status line while text
-   streams, and distinguishes it from the `preparing`/`waiting for model` phases; the
-   rewind menu's checkpoint rows contain `ago` if you need an anchor there). **Short
-   answers may finish before you ever catch `streaming`, and the idle UI repaints
-   periodically so quiet never settles** — in that case just poll `screen` for the answer
-   block (lines starting with `●`) instead of burning waits → `Escape`
-   (`--key Escape`) interrupts
-   (`└ Interrupted by user`); double-ESC opens the rewind/resume menu — **one
-   `send --key Escape --key Escape` call (both keys in a single invocation, 0ms apart);
-   if that doesn't trigger it, try two separate calls ~0.2s apart** (the app's debounce
-   window is picky; its live "N s ago" timestamps repaint every second — wait with
-   `--until` anchors, not quiet). **Exit** needs a double C-c, and here the rhythm is the
-   opposite: a single call with two C-c's does NOT work — use two separate
-   `send --key C-c` calls with a short sleep (0.3-0.5s; **err on the short side** — the
-   app's double-tap window is <1s of *key-event* time, and each CLI invocation's startup
-   inflates the gap, so sleep 1 misses it); confirm with `--cmd-done`. For **multi-line
-   input** in apps that don't bind C-j: send the kitty keyboard encoding of Shift+Enter
-   via `--hex 1b5b31333b3275` in a single call (see the hex note above) — bracketed paste
-   and xterm Shift+Enter encodings are NOT parsed by ink. Note that
-   restarting the app in the same pane leaves stale frames that fake-settle short quiets
-   and re-match old `--until` anchors — **the reliable way to see the new first screen is
-   anchoring the `>` input box** (`--until '^>$'`); a longer quiet (~2.5s) is only a
-   no-anchor fallback and can still settle on stale frames when cold start exceeds it.
+4. **ink/bubbletea app (e.g. codebuddy CLI)** — full chain, every wait anchor explicit:
+
+   ```bash
+   $TD start -n cb --cmd bash --width 100 --height 40
+   $TD send  -n cb --type 'unset SERVER__PORT CODEBUDDY_SERVICE_PROXY_URL' --key Enter
+   #   ^ inherited agent env makes the TUI silently never mount (zero bytes after the echo)
+   $TD wait  -n cb --cmd-done
+   $TD send  -n cb --type codebuddy --key Enter
+   #   ^ never `exec` the app: replacing bash kills the OSC 133 reporter, so --cmd-done can never fire
+   $TD wait  -n cb --until 'trust the files'    # fresh dir → trust dialog ("Do you trust the files in this folder?")
+   $TD send  -n cb --key Enter                  # Enter through it before expecting the real first screen
+   $TD wait  -n cb --until '^>$'                # first paint: anchor the `>` input box
+   $TD send  -n cb --type 'your question' --key Enter
+   $TD wait  -n cb --until 'streaming'          # status-line word while text streams; not the preparing/waiting phases
+   $TD wait  -n cb --quiet-ms 1500              # end of stream
+   $TD screen -n cb -J                          # read the answer block (lines starting with ●)
+   # exit: double C-c MUST be two separate calls — a single call with two C-c's does NOT work
+   $TD send -n cb --key C-c; sleep 0.3; $TD send -n cb --key C-c
+   #   ^ 0.3-0.5s, err on the short side: the double-tap window is <1s of key-event time and each CLI
+   #     invocation's startup inflates the gap (sleep 1 misses it)
+   $TD wait  -n cb --cmd-done
+   ```
+
+   - **Stale frames on restart**: relaunching in the same pane leaves old frames that
+     fake-settle short quiets and re-match old `--until` anchors — `^>$` is the reliable
+     new-screen signal; a ~2.5s quiet is only a no-anchor fallback (still settles wrong
+     when cold start exceeds it). `--quiet-ms 800` alone is fine on a truly fresh pane.
+   - **Short answers** may finish before you ever catch `streaming`, and the idle UI
+     repaints periodically so quiet never settles → skip waits, poll `screen` for `●`.
+   - **Key rhythms (an opposite pair!)**: interrupt = one `--key Escape`
+     (`└ Interrupted by user`). Rewind/resume menu = ONE call `--key Escape --key Escape`
+     (0 ms apart); if that doesn't trigger it, two separate calls ~0.2s apart.
+   - **Multi-line input** (apps that don't bind C-j): `send --hex 1b5b31333b3275` (kitty
+     Shift+Enter) in a single call — bracketed paste and xterm Shift+Enter are NOT parsed
+     by ink.
+   - Rewind menu: checkpoint rows contain `ago`; live "N s ago" timestamps repaint every
+     second → wait with `--until` anchors, never quiet. Locate the input precisely with
+     `screen --runs` / `--element-at` before typing.
 
 ## Tester Feedback Protocol
 
