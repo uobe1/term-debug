@@ -4,11 +4,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TD="python3 $ROOT/term_debug.py"
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+TD="python3 -m termdebug"
 NAME="td05_$$_$RANDOM"
 SOCK="td05sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache"
+export XDG_STATE_HOME="$TMP/state"
 
 cleanup() { tmux -L "$SOCK" kill-server >/dev/null 2>&1 || true; rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -16,7 +17,7 @@ fail() { echo "E2E-05 FAIL: $*"; exit 1; }
 
 $TD start -n "$NAME" --cmd bash --socket "$SOCK" --width 100 --height 30 >/dev/null \
   || fail "start failed"
-DIR="$XDG_CACHE_HOME/term-debug/$NAME"
+DIR="$XDG_STATE_HOME/term-debug/$NAME"
 
 # shell integration is injected for bash
 python3 -c "

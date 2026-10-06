@@ -1,6 +1,6 @@
 """On-disk session evidence: asciicast v2 raw.log + atomic state.json.
 
-Layout: $XDG_CACHE_HOME/term-debug/<session>/
+Layout: $XDG_STATE_HOME/term-debug/<session>/
   raw.log     line 1 = v2 header (object); then event lines [elapsed, code, data]
               codes: o=pane output stream, i=client injection, r=resize, m=sync point
   state.json  locator + recorder state (socket, pane_id, shell_integration,
@@ -14,12 +14,14 @@ from pathlib import Path
 from termdebug.errors import TDError
 
 
-def cache_root() -> Path:
-    return Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "term-debug"
+def state_root() -> Path:
+    """XDG Base Directory spec: session recordings + state are logs/current
+    state (XDG_STATE_HOME), not discardable cache (XDG_CACHE_HOME)."""
+    return Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "term-debug"
 
 
 def session_dir(session: str) -> Path:
-    return cache_root() / session
+    return state_root() / session
 
 
 def read_state(session: str) -> dict:
@@ -28,8 +30,8 @@ def read_state(session: str) -> dict:
         raise TDError("session-missing",
                       f"no state.json for session {session!r}",
                       hint=f"expected at {p} — if you started the session with a "
-                           f"different XDG_CACHE_HOME, every command must use the "
-                           f"same one; or start with: term_debug.py start -n "
+                           f"different XDG_STATE_HOME, every command must use the "
+                           f"same one; or start with: term-debug start -n "
                            f"{session} --cmd <command>")
     return json.loads(p.read_text())
 

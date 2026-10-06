@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "term-debug"
+version = "2.0.0a1"
+description = "Evidence-driven CLI that lets agents drive and debug interactive terminal programs (shells, nano/vim, REPLs, TUIs) through tmux"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Uobe" }]
+requires-python = ">=3.14"
+keywords = ["tmux", "terminal", "agent", "automation", "tui", "debugging", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Terminals",
+]
+
+# tmux is the only external hard dependency and is a system binary, not a
+# Python package. Pillow is optional (screenshot rendering only).
+dependencies = []
+
+[project.optional-dependencies]
+image = ["pillow>=11"]
+
+[project.scripts]
+term-debug = "termdebug.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/uobe1/term-debug"
+Repository = "https://github.com/uobe1/term-debug"
+Issues = "https://github.com/uobe1/term-debug/issues"
+Documentation = "https://github.com/uobe1/term-debug/tree/main/docs"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["termdebug"]

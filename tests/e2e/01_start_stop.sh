@@ -4,11 +4,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TD="python3 $ROOT/term_debug.py"
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+TD="python3 -m termdebug"
 NAME="td01_$$_$RANDOM"
 SOCK="td01sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache"
+export XDG_STATE_HOME="$TMP/state"
 
 cleanup() { tmux -L "$SOCK" kill-server >/dev/null 2>&1 || true; rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -21,7 +22,7 @@ $TD start -n "$NAME" --cmd bash --socket "$SOCK" --width 100 --height 30 >/dev/n
 tmux -L "$SOCK" has-session -t "$NAME" 2>/dev/null \
   || fail "tmux has-session: session $NAME not found on socket $SOCK"
 
-DIR="$XDG_CACHE_HOME/term-debug/$NAME"
+DIR="$XDG_STATE_HOME/term-debug/$NAME"
 [ -f "$DIR/raw.log" ] || fail "raw.log missing at $DIR"
 
 # raw.log first line: asciicast v2 header with matching width/height
