@@ -29,6 +29,24 @@ def test_mode_disabled_after_exit():
     assert m["enabled"] is False and m["sgr"] is False
 
 
+def test_mode_combined_decset_enable():
+    # Real TUIs often enable several modes with ONE combined sequence.
+    m = mouse_mode("noise\x1b[?1000;1006hmore")
+    assert m["enabled"] is True and m["sgr"] is True and m["normal"] is True
+
+
+def test_mode_combined_decset_disable():
+    tail = "\x1b[?1000h\x1b[?1006h\x1b[?1000;1006l"
+    m = mouse_mode(tail)
+    assert m["enabled"] is False and m["sgr"] is False
+
+
+def test_mode_combined_motion_without_normal():
+    m = mouse_mode("\x1b[?1002;1006h")
+    assert m["enabled"] is True and m["motion"] is True
+    assert m["normal"] is False and m["sgr"] is True
+
+
 def test_mode_reenable_wins():
     tail = "\x1b[?1000h\x1b[?1000l\x1b[?1000h"
     assert mouse_mode(tail)["enabled"] is True

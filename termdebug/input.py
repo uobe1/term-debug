@@ -9,6 +9,9 @@ import time
 from termdebug import records, tmuxio
 from termdebug.errors import TDError
 
+# DECSET/DECRST: ESC [ ? <mode>[;<mode>...] h (set) / l (reset).
+_DECSET = re.compile("\x1b\\[\\?(\\d+(?:;\\d+)*)([hl])")
+
 # Key names accepted by send --key (tmux KEYC names). Raw bytes go through
 # send --hex (send-keys -H) instead.
 KNOWN_KEYS = frozenset({
@@ -39,17 +42,20 @@ def mouse_encode(button: int, x: int, y: int, press: bool) -> str:
 def mouse_mode(raw_tail: str) -> dict:
     """Latest mouse tracking state from the pane's raw output stream.
 
-    Scans for enable/disable pairs of the tracking modes; the most recent
-    event of each wins (programs routinely toggle modes on enter/exit).
+    Parses every DECSET/DECRST sequence (ESC [ ? <modes> h/l); later events
+    overwrite earlier ones (programs routinely toggle modes on enter/exit).
+    Modes may be combined in one sequence (`\\e[?1000;1006h`) — tmux accepts
+    that form and real TUIs emit it, so splitting on ';' is required.
     """
-    def latest(on_seq: str, off_seq: str) -> bool:
-        on, off = raw_tail.rfind(on_seq), raw_tail.rfind(off_seq)
-        return on >= 0 and on > off
-
-    normal = latest("\x1b[?1000h", "\x1b[?1000l")
-    motion = latest("\x1b[?1002h", "\x1b[?1002l")
-    anym = latest("\x1b[?1003h", "\x1b[?1003l")
-    sgr = latest("\x1b[?1006h", "\x1b[?1006l")
+    states: dict[str, bool] = {}
+    for m in _DECSET.finditer(raw_tail):
+        on = m.group(2) == "h"
+        for mode in m.group(1).split(";"):
+            states[mode] = on
+    normal = states.get("1000", False)
+    motion = states.get("1002", False)
+    anym = states.get("1003", False)
+    sgr = states.get("1006", False)
     return {"enabled": normal or motion or anym, "sgr": sgr,
             "normal": normal, "motion": motion, "any_motion": anym}
 
