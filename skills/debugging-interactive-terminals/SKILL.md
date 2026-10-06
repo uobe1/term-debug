@@ -24,7 +24,7 @@ with a screen snapshot attached.
    layout questions ("what does the frame look like", "where is the dialog box drawn") →
    `screenshot`. You may alternate freely.
 
-CLI: `python3 <repo>/term_debug.py ...` (only external dependency: tmux).
+CLI: `term-debug` (after install) or `PYTHONPATH=<repo>/src python3 -m termdebug` (only external dependency: tmux).
 
 ## Quick Reference
 
@@ -49,7 +49,7 @@ Targets are `(socket, session, window, pane)` four-tuples: `-n "sess"`, `"sess:w
 ## Confirming a command finished (the standard loop)
 
 ```bash
-TD="python3 $REPO/term_debug.py"
+TD="term-debug"   # or: PYTHONPATH=$REPO/src python3 -m termdebug
 $TD start -n demo --cmd bash --width 100 --height 30
 $TD send  -n demo --type "make build" --key Enter
 $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0

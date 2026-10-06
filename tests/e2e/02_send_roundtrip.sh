@@ -3,11 +3,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TD="python3 $ROOT/term_debug.py"
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+TD="python3 -m termdebug"
 NAME="td02_$$_$RANDOM"
 SOCK="td02sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache"
+export XDG_STATE_HOME="$TMP/state"
 
 cleanup() { tmux -L "$SOCK" kill-server >/dev/null 2>&1 || true; rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -15,7 +16,7 @@ fail() { echo "E2E-02 FAIL: $*"; exit 1; }
 
 $TD start -n "$NAME" --cmd bash --socket "$SOCK" --width 100 --height 30 >/dev/null \
   || fail "start failed"
-DIR="$XDG_CACHE_HOME/term-debug/$NAME"
+DIR="$XDG_STATE_HOME/term-debug/$NAME"
 
 get_offset() { python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['last_send_offset'])" "$DIR/state.json"; }
 

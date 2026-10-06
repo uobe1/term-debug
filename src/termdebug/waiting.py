@@ -191,7 +191,7 @@ class ExitCondition(Condition):
             raise TDError(
                 "pane-dead-by-signal",
                 f"pane killed by signal {signal}",
-                hint="respawn with: term_debug.py start -n <name> --cmd <command> "
+                hint="respawn with: term-debug start -n <name> --cmd <command> "
                      "(then re-run your scenario)",
                 evidence={"signal": signal, "screen": ctx.capture(0)},
             )
@@ -216,7 +216,7 @@ def pane_dead_error(ctx) -> TDError:
         return TDError(
             "pane-dead-by-signal",
             f"pane killed by signal {signal} while waiting",
-            hint="respawn with: term_debug.py start -n <name> --cmd <command>",
+            hint="respawn with: term-debug start -n <name> --cmd <command>",
             evidence={"signal": signal, "screen": ctx.capture(0)},
         )
     return TDError(

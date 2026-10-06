@@ -1,6 +1,40 @@
 .worktrees/
+
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+
+# Build & packaging artifacts
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local scratch / test dirs (build & run artifacts never belong in git)
+tmp/
+*.log
+
+# Package Manager
 package-lock.json
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
 
 # Agent private dirs & instruction files (privacy)
 .claude/

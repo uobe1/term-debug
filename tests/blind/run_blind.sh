@@ -17,7 +17,7 @@ cat <<EOF
 
 Tester profile:
   - A "volunteer user": knows the task, NOT the tool's internals.
-  - Gets: the CLI (term_debug.py) + skills/debugging-interactive-terminals/SKILL.md.
+  - Gets: the CLI (python3 -m termdebug, via src/) + skills/debugging-interactive-terminals/SKILL.md.
   - Runs with TERM_DEBUG_DISABLE_IMAGE=1 (heuristics-only) or without (full).
   - Right to complain: ends output with 'FEEDBACK: <one line about what
     confused / was missing / had to be guessed>'.
@@ -30,7 +30,7 @@ Prompt template (hand to the tester agent):
 
   You are testing a terminal-debugging CLI. Read the skill at
   ${ROOT}/skills/debugging-interactive-terminals/SKILL.md, then use the CLI
-  it documents (python3 ${ROOT}/term_debug.py ...) to complete this task:
+  it documents (PYTHONPATH=${ROOT}/src python3 -m termdebug ...) to complete this task:
 
   <TASK: e.g. reproduce and fix the two bugs in tests/fixtures/todo/todo.js,
   running it with bun — debug first, fix code second, prove both fixes.>

@@ -219,9 +219,9 @@ def cmd_wait(args) -> int:
             raise TDError(
                 "session-missing",
                 f"no state.json for session {target.session!r}",
-                hint=f"expected under {records.cache_root()} — keep XDG_CACHE_HOME "
+                hint=f"expected under {records.state_root()} — keep XDG_STATE_HOME "
                      f"consistent between start and wait, or start with: "
-                     f"term_debug.py start -n {target.session} --cmd bash")
+                     f"term-debug start -n {target.session} --cmd bash")
         if not state.get("shell_integration"):
             raise TDError("no-shell-integration",
                           f"session {target.session!r} has no OSC 133 injection",
@@ -325,7 +325,7 @@ def cmd_trace(args) -> int:
     if not path.exists():
         raise TDError("session-missing",
                       f"no raw.log for session {args.name!r}",
-                      hint="run: term_debug.py start -n <name> --cmd <command>")
+                      hint="run: term-debug start -n <name> --cmd <command>")
     with path.open(encoding="utf-8") as fh:
         for line in fh:
             ev = json.loads(line)
@@ -368,7 +368,7 @@ def _not_implemented(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="term_debug.py",
+        prog="term-debug",
         description="Drive and debug interactive terminal programs via tmux (v2).",
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")

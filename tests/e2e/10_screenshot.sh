@@ -3,10 +3,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TD="python3 $ROOT/term_debug.py"
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+TD="python3 -m termdebug"
 SOCK="td10sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
-export XDG_CACHE_HOME="$TMP/cache"
+export XDG_STATE_HOME="$TMP/state"
 
 cleanup() { tmux -L "$SOCK" kill-server >/dev/null 2>&1 || true; rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -37,7 +38,7 @@ for jf, kind in ((sys.argv[1], "PNG"), (sys.argv[2], "JPEG")):
 PY
 
 # --- pillow-missing: -S skips site-packages, so PIL is importable nowhere ---
-if python3 -S "$ROOT/term_debug.py" screenshot -n td10 --format png -o "$TMP/s2.png" \
+if python3 -S -m termdebug screenshot -n td10 --format png -o "$TMP/s2.png" \
     >/dev/null 2>"$TMP/np.json"; then
   fail "screenshot without Pillow must fail"
 fi
