@@ -12,6 +12,21 @@ venv/
 # Build & packaging artifacts
 build/
 dist/
+*.egg
+*.egg-link
+pip-wheel-metadata/
+
+# Test / fuzzing artifacts
+.hypothesis/
+
+# Python version pin (pyenv etc.)
+.python-version
+
+# Sphinx / docs build output (if docs are ever built)
+docs/_build/
+
+# Local-only design/plan docs (not published to the repo)
+docs/plans/
 
 # Tooling caches
 .pytest_cache/
