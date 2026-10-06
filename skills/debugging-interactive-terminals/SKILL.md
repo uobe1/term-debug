@@ -31,8 +31,8 @@ CLI: `term-debug` (after install) or `PYTHONPATH=<repo>/src python3 -m termdebug
 | Command | Purpose |
 |---------|---------|
 | `start -n N --cmd bash --width W --height H` | create session (+ v2 recording; bash gets OSC 133 integration) |
-| `send -n N --type "text" --key Enter` | inject input; text and keys are **always separate** tmux calls |
-| `screen -n N [--meta] [-N] [-J] [--grid] [--runs] [--grep --fg red] [--element-at X Y]` | text channel: status, trailing spaces, join, SGR cell grid, runs, attribute search, cell lookup |
+| `send -n N --type "text" --key Enter` | inject input; text and keys are **always separate** tmux calls; keys use tmux names (`Enter Escape C-c C-o`) |
+| `screen -n N [--meta] [-N] [-J] [--grid] [--runs] [--grep --fg red] [--element-at X Y]` | text channel: status, trailing spaces, join, SGR cell grid, runs, **SGR attribute search** (`--grep` needs --fg/--bg/--attr — it is NOT a text grep; pipe plain `screen` output to grep for text), cell lookup |
 | `wait -n N --cmd-done [--expect-code 0]` | **command finished + exit code (fact)** — use this to confirm completion |
 | `wait -n N --exit [--expect-code N]` | pane exit / death, signal name in evidence (fact) |
 | `wait -n N --until 'regex' [--scrollback N]` | screen regex (inference; rstrip self-heal for trailing spaces) |
@@ -45,15 +45,25 @@ CLI: `term-debug` (after install) or `PYTHONPATH=<repo>/src python3 -m termdebug
 
 Targets are `(socket, session, window, pane)` four-tuples: `-n "sess"`, `"sess:win"`,
 `"sock:sess:win.pane"`. Nested tmux panes are directly addressable via their socket name.
+`wait` defaults: `--timeout 10` (seconds), `--interval 0.1`. `--until` patterns are Python
+`re` with DOTALL|MULTILINE — alternation (`a|b`) works.
 
 ## Confirming a command finished (the standard loop)
 
 ```bash
 TD="term-debug"   # or: PYTHONPATH=$REPO/src python3 -m termdebug
 $TD start -n demo --cmd bash --width 100 --height 30
+$TD send  -n demo --type true --key Enter
+$TD wait  -n demo --cmd-done --expect-code 0 --timeout 10   # probe: shell is ready (fact)
 $TD send  -n demo --type "make build" --key Enter
 $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
 ```
+
+- **Why the `true` probe**: bash's first startup emits a `D` marker with no preceding `C`,
+  which the scanner classifies as aborted — a bare `--cmd-done` right after `start` always
+  times out. The probe's `D` is the first real `done` and proves the shell is reading input.
+  The same probe doubles as the "is the shell back?" check after leaving a nested program
+  (a live REPL would swallow `true`, so `--cmd-done` keeps timing out).
 
 - `--cmd-done` scans the pane's raw output stream for OSC 133 markers injected into bash.
   The exit code comes from the shell protocol → confidence `fact`.
@@ -116,17 +126,32 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
 
 ## Standard Scenarios
 
-1. **nano edit + run** (full-screen TUI): start → wait prompt → send `nano file` + Enter →
-   wait `GNU nano` → type text → `C-o` → wait the save prompt (**version-dependent:
-   `File Name to Write` on older nano, `Write to File:` on nano 9+** — on timeout read
-   evidence.screen and re-anchor) → Enter → wait `Wrote` → `C-x` → `--cmd-done` → verify
-   the file via ordinary `cat` (outside the pane). Expect `tty-echo-broken` warnings to be
+1. **nano edit + run** (full-screen TUI): start → `true` probe + `--cmd-done` → send
+   `nano file` + Enter → wait `GNU nano` → type text → `C-o` → wait the save prompt
+   (**version-dependent: `File Name to Write` on older nano, `Write to File:` on nano 9+** —
+   one pattern covers both: `'File Name to Write|Write to File:'` — on timeout read
+   evidence.screen and re-anchor) → Enter → wait `Wrote` → `C-x` →
+   `--cmd-done` → verify the file via ordinary `cat` (outside the pane). Typed text needs no
+   trailing Enter — `C-o` saves regardless. Running the file
+   afterwards: confirm via `--cmd-done` (fact) first, then read output with plain
+   `screen` piped to grep — anchoring `--until 'hello'` would be echo_suspect (`hello` is a
+   substring of the sent `python3 hello.py`). Expect `tty-echo-broken` warnings to be
    absent here: TUIs respond with redraws, which the warning logic treats as healthy.
    Editor key behavior differs by program: `C-k`/`C-o`/`Down` are safe bets, but keys like
    `End`/`Home` may be unbound in some editors — verify on screen instead of assuming.
-2. **REPL driving** (python/node): start REPL → wait its prompt via `--until` →
-   `--type` expression + Enter → read response via `screen`/`--grep`; exit via
-   `C-d` then `wait --exit --expect-code 0`.
+2. **REPL driving** (python/node), two topologies:
+   - **REPL as the pane's main process** (`start --cmd python3`): wait its prompt via
+     `--until` (e.g. `^>>>` — the terminal rstrips, so pyrepl's bare `>>>` needs the
+     self-heal) → `--type` expression + Enter → read response via `screen` (verify the
+     value with `screen -J | grep`); exit via `C-d` then `wait --exit --expect-code 0`
+     (pane death = fact).
+   - **REPL inside bash** (`send python3` in a bash pane): `--exit` never fires (the pane
+     belongs to bash and keeps living); the prompt anchor is the same `^>>>`. After `C-d`,
+     confirm the shell is back with the `true` probe + `--cmd-done --expect-code 0` —
+     met **implies** the REPL is gone: a live REPL would have swallowed `true` as an
+     expression (NameError, no `D` marker) instead of letting bash execute it. **Do NOT
+     probe with `pgrep`** — term-debug's own recorder is a python3 process, so the count
+     is never 0 (measured: 4 in a bare session).
 3. **todo.js double-bug repro** (JS project): run the failing program in the pane, wait for
    the error via `--until`, capture `trace --format json` as the evidence bundle, fix code
    with normal tools, re-run the same chain to prove the fix.
@@ -163,7 +188,9 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
      repaints periodically so quiet never settles → skip waits, poll `screen` for `●`.
    - **Key rhythms (an opposite pair!)**: interrupt = one `--key Escape`
      (`└ Interrupted by user`). Rewind/resume menu = ONE call `--key Escape --key Escape`
-     (0 ms apart); if that doesn't trigger it, two separate calls ~0.2s apart.
+     (0 ms apart; verified to open the Rewind menu on 2.161.4, checkpoint row reads
+     "N s ago"); if that doesn't trigger it, two separate calls ~0.2s apart. One `Escape`
+     closes the menu again.
    - **Multi-line input** (apps that don't bind C-j): `send --hex 1b5b31333b3275` (kitty
      Shift+Enter) in a single call — bracketed paste and xterm Shift+Enter are NOT parsed
      by ink.
