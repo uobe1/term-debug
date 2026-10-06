@@ -10,7 +10,9 @@ description: Use when debugging, driving, or reproducing issues in interactive t
 Interactive programs own a screen and react to keystrokes; stdout capture and blind `sleep`
 both fail. term-debug v2 drives them through tmux and replaces guessing with **evidence**:
 every wait returns a verdict with a confidence level, every failure returns structured JSON
-with a screen snapshot attached.
+with a screen snapshot attached. The skill teaches a **method for unfamiliar programs** —
+observe, derive anchors from what the program actually paints, confirm with probes — not a
+table of pre-known screens.
 
 **Core principles**
 
@@ -31,7 +33,7 @@ CLI: `term-debug` (after install) or `PYTHONPATH=<repo>/src python3 -m termdebug
 | Command | Purpose |
 |---------|---------|
 | `start -n N --cmd bash --width W --height H` | create session (+ v2 recording; bash gets OSC 133 integration) |
-| `send -n N --type "text" --key Enter` | inject input; text and keys are **always separate** tmux calls; keys use tmux names (`Enter Escape C-c C-o`) |
+| `send -n N --type "text" --key Enter` | inject input; ONE CLI call may carry both — term-debug internally issues separate tmux send-keys calls (text and key names mixed in one tmux call silently drop keys); keys use tmux names (`Enter Escape C-c C-o`) |
 | `screen -n N [--meta] [-N] [-J] [--grid] [--runs] [--grep --fg red] [--element-at X Y]` | text channel: status, trailing spaces, join, SGR cell grid, runs, **SGR attribute search** (`--grep` needs --fg/--bg/--attr — it is NOT a text grep; pipe plain `screen` output to grep for text), cell lookup |
 | `wait -n N --cmd-done [--expect-code 0]` | **command finished + exit code (fact)** — use this to confirm completion |
 | `wait -n N --exit [--expect-code N]` | pane exit / death, signal name in evidence (fact) |
@@ -46,7 +48,9 @@ CLI: `term-debug` (after install) or `PYTHONPATH=<repo>/src python3 -m termdebug
 Targets are `(socket, session, window, pane)` four-tuples: `-n "sess"`, `"sess:win"`,
 `"sock:sess:win.pane"`. Nested tmux panes are directly addressable via their socket name.
 `wait` defaults: `--timeout 10` (seconds), `--interval 0.1`. `--until` patterns are Python
-`re` with DOTALL|MULTILINE — alternation (`a|b`) works.
+`re` with DOTALL|MULTILINE — alternation (`a|b`) works. `--grep` attr names: bold, dim,
+italic, underline, blink, reverse, strikethrough; fg/bg take color names (black..white,
+bright-*) or 256-palette indexes or `#rrggbb`.
 
 ## Confirming a command finished (the standard loop)
 
@@ -85,6 +89,9 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   `heuristic`. **Never put the marker you wait for inside your sent text**; if the program
   would echo it identically, split the string at runtime (e.g. `print('OUT_' + '42')`).
   Anchoring on *program output* (not echoed text) or using `--cmd-done` (fact) is stronger.
+  When the word you need is unavoidably both your input and program output (search terms in
+  a pager, commands echoing filenames), don't wait on it at all — act, then **verify by
+  reading the screen** (`screen | grep`) instead of waiting.
   Leftover echoes from earlier experiments can also pollute later waits — use a fresh
   session for sensitive experiments.
 - **Spinners defeat quiet**: an animated line changes every 150 ms but a slow device can
@@ -98,8 +105,7 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   quiet for its end. **Menu screens are quiet-hostile too**: modal pickers (model list,
   dialogs) repaint on a timer, so inside menus use `sleep 0.5-1` + `screen` instead of
   `--quiet-ms`. Menu arrow keys also debounce: `send --key Up --key Up` in one call moves
-  the selection **once** — send each arrow as its own call with ~0.35s between calls
-  (same rhythm family as the double-tap notes in scenario 4).
+  the selection **once** — send each arrow as its own call with ~0.35s between calls.
 - **C-\\**: no key name exists; send raw bytes: `send --hex 1c`. Same for any byte without
   a tmux key name. Multi-byte sequences work too (`--hex 1b5b31333b3275` = kitty
   Shift+Enter) — tmux's `-H` takes one byte per argument, so the CLI splits the string
@@ -124,85 +130,65 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
   `raw.log` events) and, for layout claims, the `screenshot` path.
 - Timeouts are data: report the `error` JSON (screen snapshot inside), don't swallow it.
 
-## Standard Scenarios
+## Driving an unfamiliar interactive program
 
-1. **nano edit + run** (full-screen TUI): start → `true` probe + `--cmd-done` → send
-   `nano file` + Enter → wait `GNU nano` → type text → `C-o` → wait the save prompt
-   (**version-dependent: `File Name to Write` on older nano, `Write to File:` on nano 9+** —
-   one pattern covers both: `'File Name to Write|Write to File:'` — on timeout read
-   evidence.screen and re-anchor) → Enter → wait `Wrote` → `C-x` →
-   `--cmd-done` → verify the file via ordinary `cat` (outside the pane). Typed text needs no
-   trailing Enter — `C-o` saves regardless. Running the file
-   afterwards: confirm via `--cmd-done` (fact) first, then read output with plain
-   `screen` piped to grep — anchoring `--until 'hello'` would be echo_suspect (`hello` is a
-   substring of the sent `python3 hello.py`). Expect `tty-echo-broken` warnings to be
-   absent here: TUIs respond with redraws, which the warning logic treats as healthy.
-   Editor key behavior differs by program: `C-k`/`C-o`/`Down` are safe bets, but keys like
-   `End`/`Home` may be unbound in some editors — verify on screen instead of assuming.
-2. **REPL driving** (python/node), two topologies:
-   - **REPL as the pane's main process** (`start --cmd python3`): wait its prompt via
-     `--until` (e.g. `^>>>` — the terminal rstrips, so pyrepl's bare `>>>` needs the
-     self-heal) → `--type` expression + Enter → read response via `screen` (verify the
-     value with `screen -J | grep`); exit via `C-d` then `wait --exit --expect-code 0`
-     (pane death = fact).
-   - **REPL inside bash** (`send python3` in a bash pane): `--exit` never fires (the pane
-     belongs to bash and keeps living); the prompt anchor is the same `^>>>`. After `C-d`,
-     confirm the shell is back with the `true` probe + `--cmd-done --expect-code 0` —
-     met **implies** the REPL is gone: a live REPL would have swallowed `true` as an
-     expression (NameError, no `D` marker) instead of letting bash execute it. **Do NOT
-     probe with `pgrep`** — term-debug's own recorder is a python3 process, so the count
+Work in this order — observe before you anchor, anchor before you drive:
+
+**1. Classify the program** — it decides how completion and exit are confirmed:
+   - *Program IS the pane* (`start --cmd <prog>`): its death is observable → confirm exit
+     with `wait --exit` (fact).
+   - *Program inside bash* (`send <prog> --key Enter` in a bash pane): the pane always
+     belongs to bash → `--exit` never fires; "did it exit?" is confirmed with the `true`
+     probe + `--cmd-done --expect-code 0` (a live interactive program swallows `true`
+     instead of letting bash execute it, so the wait keeps timing out). **Do NOT probe
+     with `pgrep`** — term-debug's own recorder is a python3 process, so a process count
      is never 0 (measured: 4 in a bare session).
-3. **todo.js double-bug repro** (JS project): run the failing program in the pane, wait for
-   the error via `--until`, capture `trace --format json` as the evidence bundle, fix code
-   with normal tools, re-run the same chain to prove the fix.
-4. **ink/bubbletea app (e.g. codebuddy CLI)** — full chain, every wait anchor explicit:
+   - *REPL* (prompt + eval): the prompt is the anchor; results are verified by reading
+     `screen -J | grep`, never by waiting on a substring of what you sent.
+   - *Full-screen TUI* (alt-screen, repaints): prompt-less; anchors come from observation
+     (step 2). After it exits, the alt-screen restores and stale frames can fake-settle
+     short quiets and re-match old `--until` anchors — re-verify the screen after any
+     program swap in the same pane; anchor the new program's first paint, don't trust a
+     quiet interval.
 
-   ```bash
-   $TD start -n cb --cmd bash --width 100 --height 40
-   #   ^ session cwd inherits the caller's cwd — run `start` from the directory you want the app in
-   $TD send  -n cb --type 'unset SERVER__PORT CODEBUDDY_SERVICE_PROXY_URL' --key Enter
-   #   ^ inherited agent env makes the TUI silently never mount (zero bytes after the echo)
-   $TD wait  -n cb --cmd-done
-   $TD send  -n cb --type codebuddy --key Enter
-   #   ^ never `exec` the app: replacing bash kills the OSC 133 reporter, so --cmd-done can never fire
-   $TD wait  -n cb --until 'trust the files' --timeout 90   # fresh dir → trust dialog ("Do you trust the files in this folder?")
-   #   ^ Node cold start measured ~20s (Android) before the dialog paints — give this a long timeout
-   $TD send  -n cb --key Enter                  # Enter through it before expecting the real first screen
-   $TD wait  -n cb --until '^>$'                # first paint: anchor the `>` input box
-   $TD send  -n cb --type 'your question' --key Enter
-   $TD wait  -n cb --until 'streaming'          # status-line word while text streams; not the preparing/waiting phases
-   $TD wait  -n cb --quiet-ms 1500              # end of stream
-   $TD screen -n cb -J                          # read the answer block (lines starting with ●)
-   # exit: double C-c MUST be two separate calls — a single call with two C-c's does NOT work
-   $TD send -n cb --key C-c; sleep 0.3; $TD send -n cb --key C-c
-   #   ^ 0.3-0.5s, err on the short side: the double-tap window is <1s of key-event time and each CLI
-   #     invocation's startup inflates the gap (sleep 1 misses it)
-   $TD wait  -n cb --cmd-done --expect-code 0   # double C-c exits CLEANLY (exit 0, verified on 2.161.4)
-   ```
+**2. Observe, then derive the anchor.** Launch, then `screen` (and `trace` for byte-level
+   evidence) to see what the program ACTUALLY paints before waiting on anything. Good
+   anchors, in rough strength order: dialog text the program itself prints (e.g. a
+   first-launch trust dialog's own wording), status-line vocabulary shown only in a
+   specific phase (e.g. a word the status line displays while streaming, distinct from
+   the thinking/preparing phases), prompt shapes (`^>>>`, `^>$`). Bad anchors: substrings
+   of your own input (echo_suspect), text you know from a *different* program's manual —
+   every anchor string belongs to the program it was measured on; derive yours from your
+   program's screen. Program versions also change prompt wording: when an anchor times
+   out, read `evidence.screen` and re-anchor — don't trust a remembered string across
+   versions. Set `--timeout` from a first measured run (×3-5 headroom; the 10s default is
+   fine for local programs — raise it for slow cold starts, e.g. a Node CLI measured ~20s
+   to first paint on Android).
 
-   - **Stale frames on restart**: relaunching in the same pane leaves old frames that
-     fake-settle short quiets and re-match old `--until` anchors — `^>$` is the reliable
-     new-screen signal; a ~2.5s quiet is only a no-anchor fallback (still settles wrong
-     when cold start exceeds it). `--quiet-ms 800` alone is fine on a truly fresh pane.
-   - **Short answers** may finish before you ever catch `streaming`, and the idle UI
-     repaints periodically so quiet never settles → skip waits, poll `screen` for `●`.
-   - **Key rhythms (an opposite pair!)**: interrupt = one `--key Escape`
-     (`└ Interrupted by user`). Rewind/resume menu = ONE call `--key Escape --key Escape`
-     (0 ms apart; verified to open the Rewind menu on 2.161.4, checkpoint row reads
-     "N s ago"); if that doesn't trigger it, two separate calls ~0.2s apart. One `Escape`
-     closes the menu again.
-   - **Multi-line input** (apps that don't bind C-j): `send --hex 1b5b31333b3275` (kitty
-     Shift+Enter) in a single call — bracketed paste and xterm Shift+Enter are NOT parsed
-     by ink.
-   - Rewind menu: checkpoint rows contain `ago`; live "N s ago" timestamps repaint every
-     second → wait with `--until` anchors, never quiet. Locate the input precisely with
-     `screen --runs` / `--element-at` before typing.
-   - **Measured timings (v2.161.4, Android)**: cold start→trust dialog ~20s; trust→first
-     paint ~1s; send→`streaming` anchor ~5s; send→`●` for a short answer ~7s; after the
-     stream ends `--quiet-ms 1500` settles in ~2.4s (the idle tips screen did NOT block
-     settling here — expect "never settles" only on screens with live "N s ago" repaints);
-     double-C-c exit ~1.5s. When polling `screen` for `●`, one poll round (0.5s sleep +
-     CLI overhead) is ~1s — poll at that rhythm.
+**3. Find the exit path before you need it.** Check `--help`/man for the quit key; common
+   conventions: `q` (pagers), `C-d` (REPLs / EOF), `C-c` (interrupt), `Escape` ×N (menus).
+   Key bindings differ per program — verify on screen instead of assuming. After the quit
+   keystroke, confirm the shell took input back with the `true` probe, not by trusting
+   the screen. Double-tap rhythms (two keys in ONE call vs two separate calls with a
+   short gap) are program-specific and fragile: measure which works before relying on it,
+   and err on the short side when sleeping between calls (each CLI invocation's startup
+   inflates the gap).
+
+**4. Drive in a wait-loop.** One action → wait for its observed effect → next action.
+   When nothing new is waitable (input produces no fresh output, answers finish before
+   the streaming phase is catchable), stop burning waits and poll `screen` for evidence
+   (~1s per poll round at 0.5s sleep + CLI overhead) instead.
+
+## Worked micro-example
+
+The method applied once — strings below belong to THAT program (codebuddy CLI, an ink
+TUI), not to the rules: `unset` of inherited agent env was needed before the TUI would
+mount at all (the tell: zero bytes after the command echo); it must NOT be `exec`'d
+(replacing bash kills the OSC 133 reporter, so `--cmd-done` can never fire); first launch
+paints a trust dialog (anchor = the dialog's own text); answers stream (anchor =
+status-line vocabulary); exit is a double C-c sent as two separate calls ~0.3s apart,
+confirmed by `--cmd-done --expect-code 0` (clean exit 0, verified on 2.161.4). Your
+program's anchors will differ — find them in step 2.
 
 ## Tester Feedback Protocol
 
