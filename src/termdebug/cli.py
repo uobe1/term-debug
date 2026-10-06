@@ -358,14 +358,6 @@ def cmd_trace(args) -> int:
     return 0
 
 
-def _not_implemented(args) -> int:
-    raise TDError(
-        "not-implemented",
-        f"subcommand '{args.command}' is not implemented yet",
-        hint="this is the v2 skeleton; implement per docs/plans/2026-10-05-term-debug-v2-implementation.md",
-    )
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="term-debug",
