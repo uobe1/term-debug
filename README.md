@@ -36,59 +36,37 @@ it reads [the skill](skills/debugging-interactive-terminals/SKILL.md) and just w
 
 ## Installation
 
-**Note:** installation differs by setup. All methods need Python **3.14+** (stdlib
-only) and **tmux 3.x** on `PATH`; Pillow is optional (screenshots only).
+term-debug is **two parts**: the `term-debug` CLI and the
+`debugging-interactive-terminals` agent **skill**. Install both.
 
-### Verify prerequisites
+**Automatic (recommended for agents).** Point your agent at the install doc and let it
+do the work — paste this into Claude Code / CodeBuddy / Codex / Cursor / any agent
+that can read a file or URL. Repo: **https://github.com/uobe1/term-debug**
 
-```bash
-python3 --version   # 3.14+
-tmux -V             # tmux 3.x
+```text
+Read docs/en/installation.md in the term-debug repo
+(https://github.com/uobe1/term-debug) and install term-debug by following it:
+install the `term-debug` CLI and the `debugging-interactive-terminals` skill into
+my agent. Tell me what you did.
 ```
 
-### uv (recommended)
+If the agent can only fetch URLs (not local files), use the raw link instead:
+`https://raw.githubusercontent.com/uobe1/term-debug/main/docs/en/installation.md`.
 
-```bash
-uv tool install git+https://github.com/uobe1/term-debug.git
-```
+**Manual.** Open [docs/en/installation.md](docs/en/installation.md) and run the steps
+yourself (CLI + skill); the doc is written so an AI agent or a human can follow it
+end-to-end.
 
-### pip
+**Requirements:** Python **3.14+** (stdlib only) and **tmux 3.x** on `PATH`; Pillow
+optional (screenshots only).
 
-```bash
-python3 -m pip install git+https://github.com/uobe1/term-debug.git
-```
+## The agent skill
 
-### Zero install (local clone)
-
-```bash
-git clone https://github.com/uobe1/term-debug.git
-uvx --from ./term-debug term-debug --help    # run once without installing
-# or install editable from the clone:
-uv tool install ./term-debug -e
-```
-
-### Verify installation
-
-```bash
-term-debug sessions
-# → [] or a JSON array of tmux sessions — both are success
-```
-
-**Detailed docs:** [docs/installation.md](docs/installation.md) — written to be
-followed end-to-end by an AI agent.
-
-## Use as an agent skill
-
-The repo ships an agent-facing skill manual with usage patterns and hard-won
-pitfalls. Tell your agent:
-
-```
-Fetch and follow instructions from
-https://raw.githubusercontent.com/uobe1/term-debug/refs/heads/main/skills/debugging-interactive-terminals/SKILL.md
-```
-
-For Claude Code / CodeBuddy, install it as a skill by copying or linking
-`skills/debugging-interactive-terminals/` into your skills directory.
+The repo ships `skills/debugging-interactive-terminals/` — an agent-facing manual of
+usage patterns and hard-won pitfalls. It is installed automatically as part of
+[Installation](#installation) (copied/linked into your agent's skills directory) and
+triggers by description, so your agent just works. Read it standalone:
+[SKILL.md](skills/debugging-interactive-terminals/SKILL.md).
 
 ## The basic workflow
 
@@ -103,7 +81,7 @@ That's the whole loop: *start → send → wait for fact → act*. The wait engi
 speaks regex (`--until`), quiet detection (`--quiet-ms`), pane death (`--exit`),
 AND-composition, and SGR mouse (`click X Y`).
 
-**Detailed docs:** [docs/usage.md](docs/usage.md) — the agent-facing usage guide:
+**Detailed docs:** [docs/en/usage.md](docs/en/usage.md) — the agent-facing usage guide:
 mental model, decision tables, worked examples, common mistakes, red lines.
 
 ## Architecture
@@ -143,7 +121,8 @@ Bug reports, docs and code are welcome — please use **issues + pull requests**
 
 ## Star history
 
-[![Star History Chart](https://api.star-history.com/svg?repos=uobe1/term-debug&type=Date)](https://star-history.com/#uobe1/term-debug&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=uobe1/term-debug&type=Date)
+](https://star-history.com/#uobe1/term-debug&Date)
 
 ## License
 
@@ -154,8 +133,8 @@ Released under the **GNU General Public License v3.0 or later** (SPDX identifier
 that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-## Design docs
+## Documentation
 
-- [Architecture & design (Chinese)](docs/plans/2026-10-05-term-debug-v2-design.md)
-- [Task-by-task implementation plan (Chinese)](docs/plans/2026-10-05-term-debug-v2-implementation.md)
-- Agent-facing user manual: [skills/debugging-interactive-terminals/SKILL.md](skills/debugging-interactive-terminals/SKILL.md)
+- Agent-facing user manual:
+  [skills/debugging-interactive-terminals/SKILL.md](skills/debugging-interactive-terminals/SKILL.md)
+- Usage guide: [docs/en/usage.md](docs/en/usage.md)

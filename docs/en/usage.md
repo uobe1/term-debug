@@ -180,4 +180,4 @@ $TD stop  -n nano-demo
 
 - Issues: https://github.com/uobe1/term-debug/issues
 - Install problems: [installation.md](installation.md)
-- Full scenario library: [SKILL.md](../skills/debugging-interactive-terminals/SKILL.md)
+- Full scenario library: [SKILL.md](../../skills/debugging-interactive-terminals/SKILL.md)
