@@ -134,12 +134,14 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
 
    ```bash
    $TD start -n cb --cmd bash --width 100 --height 40
+   #   ^ session cwd inherits the caller's cwd — run `start` from the directory you want the app in
    $TD send  -n cb --type 'unset SERVER__PORT CODEBUDDY_SERVICE_PROXY_URL' --key Enter
    #   ^ inherited agent env makes the TUI silently never mount (zero bytes after the echo)
    $TD wait  -n cb --cmd-done
    $TD send  -n cb --type codebuddy --key Enter
    #   ^ never `exec` the app: replacing bash kills the OSC 133 reporter, so --cmd-done can never fire
-   $TD wait  -n cb --until 'trust the files'    # fresh dir → trust dialog ("Do you trust the files in this folder?")
+   $TD wait  -n cb --until 'trust the files' --timeout 90   # fresh dir → trust dialog ("Do you trust the files in this folder?")
+   #   ^ Node cold start measured ~20s (Android) before the dialog paints — give this a long timeout
    $TD send  -n cb --key Enter                  # Enter through it before expecting the real first screen
    $TD wait  -n cb --until '^>$'                # first paint: anchor the `>` input box
    $TD send  -n cb --type 'your question' --key Enter
@@ -150,7 +152,7 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    $TD send -n cb --key C-c; sleep 0.3; $TD send -n cb --key C-c
    #   ^ 0.3-0.5s, err on the short side: the double-tap window is <1s of key-event time and each CLI
    #     invocation's startup inflates the gap (sleep 1 misses it)
-   $TD wait  -n cb --cmd-done
+   $TD wait  -n cb --cmd-done --expect-code 0   # double C-c exits CLEANLY (exit 0, verified on 2.161.4)
    ```
 
    - **Stale frames on restart**: relaunching in the same pane leaves old frames that
@@ -168,6 +170,12 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
    - Rewind menu: checkpoint rows contain `ago`; live "N s ago" timestamps repaint every
      second → wait with `--until` anchors, never quiet. Locate the input precisely with
      `screen --runs` / `--element-at` before typing.
+   - **Measured timings (v2.161.4, Android)**: cold start→trust dialog ~20s; trust→first
+     paint ~1s; send→`streaming` anchor ~5s; send→`●` for a short answer ~7s; after the
+     stream ends `--quiet-ms 1500` settles in ~2.4s (the idle tips screen did NOT block
+     settling here — expect "never settles" only on screens with live "N s ago" repaints);
+     double-C-c exit ~1.5s. When polling `screen` for `●`, one poll round (0.5s sleep +
+     CLI overhead) is ~1s — poll at that rhythm.
 
 ## Tester Feedback Protocol
 
