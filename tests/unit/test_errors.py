@@ -30,8 +30,9 @@ def test_optional_fields_default_null():
 
 def test_error_code_table():
     expected = {
-        "session-missing", "socket-unreachable", "pane-dead",
-        "pane-dead-by-signal", "no-shell-integration", "expect-code-mismatch",
+        "session-missing", "invalid-arguments", "socket-unreachable",
+        "pane-dead", "pane-dead-by-signal", "no-shell-integration",
+        "shell-not-ready", "unmanaged-pane", "expect-code-mismatch",
         "timeout", "mouse-not-enabled", "tty-echo-broken",
     }
     missing = expected - set(ERROR_CODES)

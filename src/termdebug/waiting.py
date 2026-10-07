@@ -19,12 +19,19 @@ CONFIDENCE_ORDER = ("fact", "inference", "heuristic")  # strong -> weak
 class Condition:
     label: str = "condition"
     confidence: str = "inference"
+    # Degradation marker: why this condition runs with reduced evidence
+    # (e.g. "unmanaged" — no state.json/raw.log, so part of the machinery
+    # cannot run). None on fully-equipped waits.
+    degraded: str | None = None
 
     def evaluate(self, ctx) -> bool:
         raise NotImplementedError
 
     def to_json(self, met: bool) -> dict:
-        return {"type": self.label, "confidence": self.confidence, "met": met}
+        j = {"type": self.label, "confidence": self.confidence, "met": met}
+        if self.degraded:
+            j["degraded"] = self.degraded
+        return j
 
 
 class WaitContext:
@@ -39,12 +46,21 @@ class UntilRegex(Condition):
     label = "until"
     confidence = "inference"
 
-    def __init__(self, pattern: str, scrollback: int = 0, session: str | None = None):
+    def __init__(self, pattern: str, scrollback: int = 0, session: str | None = None,
+                 managed: bool = True):
         self.pattern = pattern
         self.scrollback = scrollback
         self.session = session
+        self.managed = managed
         self.echo_suspect = False
         self.rx = re.compile(pattern, re.DOTALL | re.MULTILINE)
+        if not managed:
+            # Unmanaged pane (nested tmux): no i-events exist, so echo-suspect
+            # detection cannot run and our own echo can fake the match. Cap
+            # the claim and say why (nested tmux is a supported scenario —
+            # degrade, don't refuse).
+            self.confidence = "heuristic"
+            self.degraded = "unmanaged"
 
     def evaluate(self, ctx) -> bool:
         screen = ctx.capture(self.scrollback)
@@ -82,8 +98,9 @@ class UntilRegex(Condition):
                     self.confidence = "heuristic"
                     return True
         except (TDError, OSError):
-            pass  # unmanaged pane (nested tmux): no records to inspect
-        return True
+            # Managed on paper, but records vanished: echo can't be checked.
+            self.confidence = "heuristic"
+            self.degraded = "records-unavailable"
         return True
 
     def to_json(self, met: bool) -> dict:
@@ -172,36 +189,94 @@ class CmdDone(Condition):
                 "exit_code": self.exit_code if met else None}
 
 
+class ShellReady(Condition):
+    """The shell answers a `true` probe (fact).
+
+    Internalizes the skill's standard probe loop: the client sends `true`
+    + Enter, then requires a cmd-done (exit 0) emitted after the probe.
+    Works where a bare --cmd-done cannot:
+      - right after `start` (bash's startup D has no preceding C and is
+        classified aborted, so --cmd-done would always time out);
+      - after leaving a nested program (a live REPL swallows the probe,
+        so the wait keeps failing — the timeout IS the "still inside" signal,
+        surfaced as the shell-not-ready error code).
+    The probe itself is injected by the CLI (cmd_wait) so last_send_offset
+    stays authoritative; this condition only does the fact check.
+    """
+
+    label = "shell-ready"
+    confidence = "fact"
+
+    def __init__(self, session: str):
+        self.session = session
+        self._done = CmdDone(session, 0)
+
+    def evaluate(self, ctx) -> bool:
+        return self._done.evaluate(ctx)
+
+    def to_json(self, met: bool) -> dict:
+        return {**self._done.to_json(met), "type": self.label}
+
+
 class ExitCondition(Condition):
     """Pane death via remain-on-exit: pane_dead / status / signal. fact."""
 
     label = "exit"
     confidence = "fact"
 
-    def __init__(self, expect_code: int | None = None):
+    def __init__(self, expect_code: int | None = None, managed: bool = True):
         self.expect_code = expect_code
+        self.managed = managed
         self.exit_code: int | None = None
 
-    def evaluate(self, ctx) -> bool:
-        m = ctx.meta()
-        if not m.get("pane_dead"):
-            return False
-        signal = m.get("pane_dead_signal")
-        if signal:
+    def _meet_collapsed(self) -> bool:
+        # Unmanaged pane whose session collapsed with it (no remain-on-exit):
+        # the pane is gone, which is itself a tmux protocol fact. cmd_wait
+        # probed the pane before constructing this condition, so a vanished
+        # pane mid-wait means it died — meet with fact confidence, status
+        # unreadable.
+        if self.expect_code is not None:
             raise TDError(
-                "pane-dead-by-signal",
-                f"pane killed by signal {signal}",
-                hint="respawn with: term-debug start -n <name> --cmd <command> "
-                     "(then re-run your scenario)",
-                evidence={"signal": signal, "screen": ctx.capture(0)},
-            )
-        self.exit_code = m.get("pane_dead_status")
-        if self.expect_code is not None and self.exit_code != self.expect_code:
-            raise osc133.mismatch_error(
-                self.expect_code, self.exit_code,
-                {"exit_code": self.exit_code, "expected": self.expect_code,
-                 "screen": ctx.capture(0)})
+                "expect-code-mismatch",
+                f"pane vanished without remain-on-exit; exit code "
+                f"unavailable (expected {self.expect_code})",
+                hint="drop --expect-code for unmanaged panes, or keep the "
+                     "program in a managed session (term-debug start)")
+        self.exit_code = None
+        self.degraded = "status-unavailable"
         return True
+
+    def evaluate(self, ctx) -> bool:
+        try:
+            m = ctx.meta()
+        except TDError as e:
+            if self.managed or e.code != "session-missing":
+                raise
+            return self._meet_collapsed()  # server gone: pane certainly gone
+        if m.get("pane_dead"):
+            signal = m.get("pane_dead_signal")
+            if signal:
+                raise TDError(
+                    "pane-dead-by-signal",
+                    f"pane killed by signal {signal}",
+                    hint="respawn with: term-debug start -n <name> --cmd "
+                         "<command> (then re-run your scenario)",
+                    evidence={"signal": signal, "screen": ctx.capture(0)},
+                )
+            self.exit_code = m.get("pane_dead_status")
+            if self.expect_code is not None \
+                    and self.exit_code != self.expect_code:
+                raise osc133.mismatch_error(
+                    self.expect_code, self.exit_code,
+                    {"exit_code": self.exit_code, "expected": self.expect_code,
+                     "screen": ctx.capture(0)})
+            return True
+        if not self.managed and m.get("pane_width") is None \
+                and m.get("pane_dead") is None:
+            # tmux answers a vanished pane target with rc=0 and EMPTY format
+            # fields (no error) — that is the session collapsing with the pane
+            return self._meet_collapsed()
+        return False
 
     def to_json(self, met: bool) -> dict:
         return {**super().to_json(met), "expect_code": self.expect_code,
@@ -243,17 +318,26 @@ class QuietCondition(Condition):
     label = "quiet"
     confidence = "heuristic"
 
-    def __init__(self, session: str, ms: int):
+    def __init__(self, session: str, ms: int, managed: bool = True):
         self.session = session
+        self.managed = managed
         self.ms = ms
         self.interval = max(ms / 1000, 0.25)  # sampling floor: 250ms
         self._last = None
         self._open_2026 = 0
         self._last_o_ts = None  # elapsed of the newest o-event
-        w = records.V2Writer(session)
-        self.t0 = w.t0
         self._scan_offset = 0
         self._tail = ""
+        if not managed:
+            # Unmanaged pane: no raw.log, so gate 1 (stream last-write) cannot
+            # run. Degrade to screen-stability sampling only — never touch
+            # records (V2Writer would create a bogus state dir as a side
+            # effect). Confidence stays heuristic either way.
+            self.t0 = None
+            self.degraded = "unmanaged"
+            return
+        w = records.V2Writer(session)
+        self.t0 = w.t0
         self._consume_stream()
 
     def _consume_stream(self) -> None:
@@ -279,23 +363,25 @@ class QuietCondition(Condition):
         self._tail = buf[-16:]
 
     def evaluate(self, ctx) -> bool:
-        self._consume_stream()
+        if self.managed:
+            self._consume_stream()
         m = ctx.meta()
         sample = (ctx.capture(0), m.get("cursor_x"), m.get("cursor_y"),
                   m.get("alternate_on"), m.get("history_size"))
         if self._open_2026 > 0:
             self._last = sample  # never settle mid-synchronized-update
             return False
-        # Gate 1: real output activity — how long since the pane emitted?
-        # 25% margin: a spinner whose frame period exactly equals the quiet
-        # interval would otherwise settle at the instant just before the
-        # next frame lands.
-        if self._last_o_ts is None:
-            return False
-        idle = (time.time() - self.t0) - self._last_o_ts
-        if idle < self.interval * 1.25:
-            self._last = sample
-            return False
+        # Gate 1 (managed only): real output activity — how long since the
+        # pane emitted? 25% margin: a spinner whose frame period exactly
+        # equals the quiet interval would otherwise settle at the instant
+        # just before the next frame lands.
+        if self.managed:
+            if self._last_o_ts is None:
+                return False
+            idle = (time.time() - self.t0) - self._last_o_ts
+            if idle < self.interval * 1.25:
+                self._last = sample
+                return False
         # Gate 2: screen snapshot stability across spaced samples.
         if self._last == sample:
             return True
@@ -308,7 +394,10 @@ class QuietCondition(Condition):
 
 def timeout_evidence(ctx, condition: Condition) -> dict:
     """Evidence snapshot for an unmet wait: screen, cursor, raw tail, state."""
-    screen = ctx.capture(0)
+    try:
+        screen = ctx.capture(0)
+    except (TDError, OSError):
+        screen = None  # pane/session vanished before the snapshot
     try:
         m = ctx.meta()
         cursor = {"x": m.get("cursor_x"), "y": m.get("cursor_y")}
@@ -329,8 +418,17 @@ def timeout_evidence(ctx, condition: Condition) -> dict:
 
 def timeout_hint(condition: Condition) -> str:
     """Actionable next step for an unmet wait."""
-    if condition.__class__.__name__ == "AllOf" and any(
-            c.label == "quiet" for c in condition.conditions):
+    if condition.__class__.__name__ == "AllOf":
+        quiet = next((c for c in condition.conditions if c.label == "quiet"),
+                     None)
+    else:
+        quiet = condition if condition.label == "quiet" else None
+    if quiet is not None:
+        if getattr(quiet, "degraded", None) == "unmanaged":
+            return ("quiet ran on an unmanaged pane (no raw.log) with "
+                    "screen-stability sampling only — an animation or "
+                    "clock repaint never settles; use --until on a program "
+                    "marker instead")
         return ("quiet never settled — check raw.log for periodic writes "
                 "(keepalive bytes reset the silence timer); use --until on a "
                 "program marker instead, or raise --timeout")

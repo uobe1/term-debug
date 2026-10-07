@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.screen import color_name, parse_grid, rows_to_runs
+from termdebug.screen import color_name, find_text, parse_grid, rows_to_runs
 
 
 def cells(grid):
@@ -77,6 +77,31 @@ def test_cell_coordinates():
 def test_bg_colors():
     grid = parse_grid("\x1b[44mX\x1b[0m")
     assert cells(grid)[0]["bg"] == "blue"
+
+
+def test_find_text_click_ready_coords():
+    grid = parse_grid("MENU\n  [Cancel] [OK]")
+    assert find_text(grid, "Cancel") == [{"text": "Cancel", "x": 4, "y": 2}]
+    assert find_text(grid, "OK") == [{"text": "OK", "x": 13, "y": 2}]
+
+
+def test_find_text_multiple_and_reading_order():
+    grid = parse_grid("aXbX\nX")
+    assert [m["x"] for m in find_text(grid, "X")] == [2, 4, 1]
+    assert [m["y"] for m in find_text(grid, "X")] == [1, 1, 2]
+
+
+def test_find_text_no_match_and_empty_needle():
+    grid = parse_grid("hello")
+    assert find_text(grid, "nope") == []
+    assert find_text(grid, "") == [], "empty needle must not match every boundary"
+
+
+def test_find_text_sgr_boundaries_do_not_break_match():
+    # 'Cancel' painted with an SGR change INSIDE the word still matches:
+    # the grid is character-based, escapes are not characters.
+    grid = parse_grid("[Can\x1b[7mcel]")
+    assert find_text(grid, "Cancel") == [{"text": "Cancel", "x": 2, "y": 1}]
 
 
 if __name__ == "__main__":
