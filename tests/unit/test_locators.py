@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.tmuxio import parse_target
+from termuse.tmuxio import parse_target
 
 
 def test_session_only():
@@ -35,7 +35,7 @@ def test_roundtrip_to_arg():
 
 
 def test_malformed_rejected():
-    from termdebug.errors import TDError
+    from termuse.errors import TDError
     for bad in (":", ":1.0", "a:b:c:d:e"):
         try:
             parse_target(bad)

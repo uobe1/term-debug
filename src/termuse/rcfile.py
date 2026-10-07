@@ -12,7 +12,7 @@ system bashrc so an interactive bash with --rcfile stays recognizable.
 
 def bashrc_template(system_bashrc: str) -> str:
     lines = [
-        "# --- term-debug v2 shell integration (OSC 133) ---",
+        "# --- term-use v2 shell integration (OSC 133) ---",
         f'[ -r "{system_bashrc}" ] && . "{system_bashrc}"',
         "__td_ps() { printf '\\033]133;D;%s\\007\\033]133;A\\007' \"$1\"; }",
         'case ":$PROMPT_COMMAND:" in',

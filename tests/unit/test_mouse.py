@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.input import hex_to_args, mouse_encode, mouse_mode
+from termuse.input import hex_to_args, mouse_encode, mouse_mode
 
 
 def test_encode_press_release_one_based():
@@ -67,7 +67,7 @@ def test_hex_multibyte_splits_per_byte():
 
 
 def test_hex_rejects_odd_and_nonhex():
-    from termdebug.errors import TDError
+    from termuse.errors import TDError
     for bad in ("1", "xyz", "12g"):
         try:
             hex_to_args(bad)

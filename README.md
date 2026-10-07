@@ -1,6 +1,6 @@
-# term-debug
+# term-use
 
-term-debug is an evidence-driven CLI that gives your coding agents complete control
+term-use is an evidence-driven CLI that gives your coding agents complete control
 over **interactive terminal programs** — shells, nano/vim, REPLs, animated TUIs
 (ink / bubbletea), even nested tmux — and replaces guessing with proof. Built
 agent-first, in the spirit of open-source AI-skill projects like
@@ -9,11 +9,11 @@ agent-first, in the spirit of open-source AI-skill projects like
 the agent*, the CLI is the tool interface, and every answer comes with evidence
 attached.
 
-![version](https://img.shields.io/badge/version-2.0.0a1-orange)
+![version](https://img.shields.io/badge/version-2.0.0a3-orange)
 ![python](https://img.shields.io/badge/python-3.14%2B-3776AB?logo=python&logoColor=white)
 ![requires](https://img.shields.io/badge/external%20dep-tmux%203.x-1BB91F)
-![stars](https://img.shields.io/github/stars/uobe1/term-debug?style=social)
-![issues](https://img.shields.io/github/issues/uobe1/term-debug)
+![stars](https://img.shields.io/github/stars/uobe1/term-use?style=social)
+![issues](https://img.shields.io/github/issues/uobe1/term-use)
 ![license](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
 ## How it works
@@ -36,22 +36,22 @@ it reads [the skill](skills/debugging-interactive-terminals/SKILL.md) and just w
 
 ## Installation
 
-term-debug is **two parts**: the `term-debug` CLI and the
+term-use is **two parts**: the `term-use` CLI and the
 `debugging-interactive-terminals` agent **skill**. Install both.
 
 **Automatic (recommended for agents).** Point your agent at the install doc and let it
 do the work — paste this into Claude Code / CodeBuddy / Codex / Cursor / any agent
-that can read a file or URL. Repo: **https://github.com/uobe1/term-debug**
+that can read a file or URL. Repo: **https://github.com/uobe1/term-use**
 
 ```text
-Read docs/en/installation.md in the term-debug repo
-(https://github.com/uobe1/term-debug) and install term-debug by following it:
-install the `term-debug` CLI and the `debugging-interactive-terminals` skill into
+Read docs/en/installation.md in the term-use repo
+(https://github.com/uobe1/term-use) and install term-use by following it:
+install the `term-use` CLI and the `debugging-interactive-terminals` skill into
 my agent. Tell me what you did.
 ```
 
 If the agent can only fetch URLs (not local files), use the raw link instead:
-`https://raw.githubusercontent.com/uobe1/term-debug/main/docs/en/installation.md`.
+`https://raw.githubusercontent.com/uobe1/term-use/main/docs/en/installation.md`.
 
 **Manual.** Open [docs/en/installation.md](docs/en/installation.md) and run the steps
 yourself (CLI + skill); the doc is written so an AI agent or a human can follow it
@@ -71,15 +71,18 @@ triggers by description, so your agent just works. Read it standalone:
 ## The basic workflow
 
 ```bash
-term-debug start -n demo --cmd bash --width 100 --height 30
-term-debug send  -n demo --type "make build" --key Enter
-term-debug wait  -n demo --cmd-done --expect-code 0 --timeout 120
+term-use start -n demo --cmd bash --width 100 --height 30
+term-use wait  -n demo --shell-ready --timeout 10
+term-use send  -n demo --type "make build" --key Enter
+term-use wait  -n demo --cmd-done --expect-code 0 --timeout 120
 # → {"verdict": "met", "confidence": "fact", "exit_code": 0, ...}
 ```
 
-That's the whole loop: *start → send → wait for fact → act*. The wait engine also
-speaks regex (`--until`), quiet detection (`--quiet-ms`), pane death (`--exit`),
-AND-composition, and SGR mouse (`click X Y`).
+That's the whole loop: *start → shell-ready → send → wait for fact → act*. The
+wait engine also speaks regex (`--until`), quiet detection (`--quiet-ms`), pane
+death (`--exit`), AND-composition, and SGR mouse (`click X Y`); `send` handles
+debounced key rhythms (`--repeat N --delay S`) and `screen --find` turns text
+into 1-based click-ready coordinates.
 
 **Detailed docs:** [docs/en/usage.md](docs/en/usage.md) — the agent-facing usage guide:
 mental model, decision tables, worked examples, common mistakes, red lines.
@@ -87,13 +90,13 @@ mental model, decision tables, worked examples, common mistakes, red lines.
 ## Architecture
 
 ```
-agent → term-debug CLI (stateless client) → tmux server → pane (target program)
+agent → term-use CLI (stateless client) → tmux server → pane (target program)
                                               └→ pipe.py (recorder sink, one per pane)
 ```
 
 Service/Client split: the CLI is a short-lived, stateless client with zero resident
 memory; the tmux server is the service owning PTYs/sessions. All state lives on disk
-under `$XDG_STATE_HOME/term-debug/<session>/` — `raw.log` (asciicast v2 evidence
+under `$XDG_STATE_HOME/term-use/<session>/` — `raw.log` (asciicast v2 evidence
 store) and `state.json` (atomic locator/recorder state, with `last_send_offset` as a
 **byte offset** into `raw.log`, so echo can never fake completion).
 
@@ -121,8 +124,8 @@ Bug reports, docs and code are welcome — please use **issues + pull requests**
 
 ## Star history
 
-[![Star History Chart](https://api.star-history.com/svg?repos=uobe1/term-debug&type=Date)
-](https://star-history.com/#uobe1/term-debug&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=uobe1/term-use&type=Date)
+](https://star-history.com/#uobe1/term-use&Date)
 
 ## License
 

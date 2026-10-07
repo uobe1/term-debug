@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-TD="python3 -m termdebug"
+TD="python3 -m termuse"
 SOCK="td07sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
 export XDG_STATE_HOME="$TMP/state"
@@ -23,7 +23,7 @@ start td07a
 $TD send -n td07a --type 'for i in $(seq 8); do echo tick$i; sleep 0.3; done' --key Enter >/dev/null \
   || fail "send loop failed"
 $TD wait -n td07a --quiet-ms 1000 --timeout 10 >/dev/null || fail "A: quiet never fired"
-python3 - "$XDG_STATE_HOME/term-debug/td07a/raw.log" <<'PY' || fail "A: ordering assertion (see above)"
+python3 - "$XDG_STATE_HOME/term-use/td07a/raw.log" <<'PY' || fail "A: ordering assertion (see above)"
 import json, sys
 tick8 = wait_m = None
 for line in open(sys.argv[1]):
@@ -48,7 +48,7 @@ $TD send -n td07b --type "python3 $ROOT/tests/fixtures/spinner.py" --key Enter >
   || fail "send spinner failed"
 $TD wait -n td07b --until 'working|SPINNER_DONE' --quiet-ms 400 --timeout 8 >/dev/null \
   || fail "B: quiet never fired"
-python3 - "$XDG_STATE_HOME/term-debug/td07b/raw.log" <<'PY' || fail "B: ordering assertion (see above)"
+python3 - "$XDG_STATE_HOME/term-use/td07b/raw.log" <<'PY' || fail "B: ordering assertion (see above)"
 import json, sys
 text, spans, wait_m = "", [], None
 for line in open(sys.argv[1]):

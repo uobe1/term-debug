@@ -1,7 +1,7 @@
-"""term-debug v2 CLI: evidence-driven driving/debugging of interactive terminals.
+"""term-use v2 CLI: evidence-driven driving/debugging of interactive terminals.
 
 Client process is stateless and short-lived; tmux server is the service.
-All failures surface as single-line JSON errors (termdebug.errors.TDError).
+All failures surface as single-line JSON errors (termuse.errors.TDError).
 """
 import argparse
 import json
@@ -11,11 +11,11 @@ import sys
 import time
 from pathlib import Path
 
-from termdebug import input as tdinput
-from termdebug import rcfile, records, screen as tdscreen
-from termdebug import screenshot as tdscreenshot
-from termdebug import tmuxio, waiting
-from termdebug.errors import TDError
+from termuse import input as tdinput
+from termuse import rcfile, records, screen as tdscreen
+from termuse import screenshot as tdscreenshot
+from termuse import tmuxio, waiting
+from termuse.errors import TDError
 
 PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
 
@@ -24,14 +24,23 @@ def resolve_target(name: str, socket: str | None = None) -> tmuxio.Target:
     """Resolve a CLI -n argument to a full target; socket falls back to state.json.
 
     An explicit socket in the target (inner:inner:0) wins — nested tmux panes
-    are addressable without being term-debug-managed.
+    are addressable without being term-use-managed. A bare name addresses
+    the default server like plain tmux would: if the session exists there
+    without term-use records, it is returned unmanaged (waits degrade)
+    instead of refusing; state.json remains the fallback for sessions on
+    custom sockets.
     """
     t = tmuxio.parse_target(name)
     if socket is not None and t.socket is None:
         t = tmuxio.Target(socket, t.session, t.window, t.pane)
     elif t.socket is None:
-        t = tmuxio.Target(records.read_state(t.session).get("socket"),
-                          t.session, t.window, t.pane)
+        try:
+            sock = records.read_state(t.session).get("socket")
+        except TDError:
+            if tmuxio.tmux("has-session", "-t", t.session).returncode != 0:
+                raise  # not on the default server either: keep the rich hint
+            sock = None  # exists unmanaged on the default server
+        t = tmuxio.Target(sock, t.session, t.window, t.pane)
     return t
 
 
@@ -126,19 +135,37 @@ def cmd_stop(args) -> int:
 def cmd_send(args) -> int:
     target = resolve_target(args.name, getattr(args, "socket", None))
     state = load_state_or_none(target.session)
-    writer = records.V2Writer(target.session)
-    offset = writer.size()  # where output caused by this send starts
-    events = tdinput.send(target, args.type or [], args.key or [], args.hex or [])
+    # Records only for managed sessions: creating a V2Writer would mkdir a
+    # state dir as a side effect — unmanaged panes (nested tmux) must not
+    # accumulate bogus record dirs.
+    writer = records.V2Writer(target.session) if state else None
+    offset = writer.size() if writer else 0  # where output caused by this send starts
+    repeat = args.repeat
+    delay = args.delay
+    if repeat < 1:
+        raise TDError("invalid-arguments", f"--repeat must be >= 1 (got {repeat})")
+    if delay < 0:
+        raise TDError("invalid-arguments", f"--delay must be >= 0 (got {delay})")
     sent_text = "".join(args.type or [])
     warning = None
-    if state is not None:
-        writer.append("i", events)
+    events: list[dict] = []
+    for i in range(repeat):
+        if i:
+            time.sleep(delay)
+        # Red line: every repetition is a full independent send (text and
+        # keys stay in separate send-keys calls). Never collapse repeats
+        # into one send-keys invocation — debounced menus would eat them.
+        rep = tdinput.send(target, args.type or [], args.key or [], args.hex or [])
+        if writer is not None:
+            writer.append("i", rep)  # one i-event per repetition: trace shows the rhythm
+        events += rep
+    if writer is not None:
         state["last_send_offset"] = offset
         writer.state = state
         writer.save_state()
         if sent_text and tdinput.echo_broken(target.session, offset, sent_text):
             warning = "tty-echo-broken"
-    result = {"ok": True, "sent": events, "offset": offset}
+    result = {"ok": True, "sent": events, "offset": offset, "repeat": repeat}
     if warning:
         result["warning"] = warning
     print(json.dumps(result, ensure_ascii=False))
@@ -166,9 +193,11 @@ def cmd_fix_tty(args) -> int:
 def cmd_screen(args) -> int:
     target = resolve_target(args.name, getattr(args, "socket", None))
     if args.meta:
-        state = records.read_state(target.session)
+        state = load_state_or_none(target.session)
         m = tmuxio.meta(target)
-        m.update(session=target.session, pane_id=state.get("pane_id"))
+        m.update(session=target.session,
+                 pane_id=state.get("pane_id") if state else None,
+                 managed=state is not None)
         print(json.dumps(m, ensure_ascii=False))
         return 0
     flags = []
@@ -178,7 +207,8 @@ def cmd_screen(args) -> int:
         flags.append("-J")
     if args.scrollback is not None:
         flags += ["-S", str(-args.scrollback)]
-    if args.element_at is not None or args.grid or args.runs or args.grep:
+    if args.element_at is not None or args.grid or args.runs or args.grep \
+            or args.find is not None:
         text = tmuxio.capture(target, tuple(flags + ["-e"]))
         grid = tdscreen.parse_grid(text)
         if args.element_at is not None:
@@ -194,14 +224,52 @@ def cmd_screen(args) -> int:
             for row in grid:
                 if tdscreen.row_matches(row, args.fg, args.bg, args.attr or ()):
                     print(tdscreen.grid_row_text(row))
+        elif args.find is not None:
+            print(json.dumps(tdscreen.find_text(grid, args.find),
+                             ensure_ascii=False))
         return 0
     print(tmuxio.capture(target, tuple(flags)), end="")
     return 0
 
 
+def require_shell_integration(target: tmuxio.Target, state: dict | None) -> dict:
+    """Shared gate for --cmd-done and --shell-ready.
+
+    Distinguishes an unmanaged pane (exists in tmux, no state.json — e.g.
+    nested tmux, a supported scenario) from a target that doesn't exist at
+    all: the former gets `unmanaged-pane`, never a push to `start`.
+    """
+    if state is None:
+        exists = tmuxio.tmux("has-session", "-t", target.session,
+                             socket=target.socket).returncode == 0
+        if exists:
+            raise TDError(
+                "unmanaged-pane",
+                f"pane {target.to_arg()!r} is not managed by term-use "
+                f"(no state.json)",
+                hint="shell-protocol facts (--cmd-done/--shell-ready) need a "
+                     "session started with: term-use start -n <name> --cmd "
+                     "bash; the screen channels (--until/--quiet-ms) still "
+                     "work here with degraded (heuristic) confidence. If this "
+                     "IS a term-use session, XDG_STATE_HOME differs between "
+                     "start and wait.")
+        raise TDError(
+            "session-missing",
+            f"no tmux session {target.session!r} and no state.json for it",
+            hint=f"expected state under {records.state_root()} — keep "
+                 f"XDG_STATE_HOME consistent between start and wait, or "
+                 f"start with: term-use start -n {target.session} --cmd bash")
+    if not state.get("shell_integration"):
+        raise TDError("no-shell-integration",
+                      f"session {target.session!r} has no OSC 133 injection",
+                      hint="start with --cmd bash to get shell integration")
+    return state
+
+
 def cmd_wait(args) -> int:
     target = resolve_target(args.name, getattr(args, "socket", None))
     state = load_state_or_none(target.session)
+    writer = records.V2Writer(target.session) if state else None
 
     def capture(scrollback: int) -> str:
         flags = ("-S", str(-scrollback)) if scrollback else ()
@@ -211,32 +279,48 @@ def cmd_wait(args) -> int:
         return tmuxio.meta(target)
 
     conditions: list = []
+    managed = state is not None
     if args.until is not None:
         conditions.append(waiting.UntilRegex(args.until, args.scrollback,
-                                             target.session))
+                                             target.session, managed=managed))
     if args.cmd_done:
-        if state is None:
-            raise TDError(
-                "session-missing",
-                f"no state.json for session {target.session!r}",
-                hint=f"expected under {records.state_root()} — keep XDG_STATE_HOME "
-                     f"consistent between start and wait, or start with: "
-                     f"term-debug start -n {target.session} --cmd bash")
-        if not state.get("shell_integration"):
-            raise TDError("no-shell-integration",
-                          f"session {target.session!r} has no OSC 133 injection",
-                          hint="start with --cmd bash to get shell integration")
+        require_shell_integration(target, state)
         conditions.append(waiting.CmdDone(target.session, args.expect_code))
+    if args.shell_ready:
+        # The `true` probe (skill's standard loop, internalized): text and
+        # Enter are separate send-keys calls (the split-send red line).
+        require_shell_integration(target, state)
+        probe_offset = writer.size()
+        probe = tdinput.send(target, ["true"], ["Enter"], [])
+        writer.append("i", probe)
+        state["last_send_offset"] = probe_offset
+        writer.state = state
+        writer.save_state()
+        conditions.append(waiting.ShellReady(target.session))
     if args.exit:
-        conditions.append(waiting.ExitCondition(args.expect_code))
+        if not managed:
+            # Anchor: fail fast on a target that never existed. tmux answers
+            # a missing pane target with rc=0 and EMPTY format fields, so
+            # probe for a real value; after this, an empty answer mid-wait
+            # means the pane died (ExitCondition's collapse handling).
+            if tmuxio.meta(target).get("pane_width") is None:
+                raise TDError(
+                    "session-missing",
+                    f"no pane {args.name!r} (session exists but the pane "
+                    f"target is empty, or the session is gone)",
+                    hint="check the locator spelling [socket:]session:win.pane; "
+                         "list candidates with: term-use sessions --socket "
+                         "<socket>")
+        conditions.append(waiting.ExitCondition(args.expect_code, managed=managed))
     if args.quiet_ms is not None:
-        conditions.append(waiting.QuietCondition(target.session, args.quiet_ms))
+        conditions.append(waiting.QuietCondition(target.session, args.quiet_ms,
+                                                 managed=managed))
     if not conditions:
         raise TDError("session-missing", "wait needs a condition",
-                      hint="use --until, --cmd-done, --exit or --quiet-ms")
+                      hint="use --until, --cmd-done, --shell-ready, --exit "
+                           "or --quiet-ms")
     cond = waiting.AllOf(conditions)
     ctx = waiting.WaitContext(capture, pane_meta)
-    writer = records.V2Writer(target.session) if state else None
 
     deadline = time.monotonic() + args.timeout
     while True:
@@ -244,11 +328,15 @@ def cmd_wait(args) -> int:
             if writer is not None:
                 writer.append("m", {"event": "wait-met",
                                     "confidence": cond.confidence})
+            try:
+                screen = capture(0)
+            except TDError:
+                screen = None  # pane/session just vanished (unmanaged --exit)
             print(json.dumps({
                 "verdict": "met",
                 "confidence": cond.confidence,
                 **cond.to_json(True),
-                "evidence": {"screen": capture(0)},
+                "evidence": {"screen": screen},
             }, ensure_ascii=False))
             return 0
         # EOF early-termination: a dead pane can never satisfy --until or
@@ -260,6 +348,17 @@ def cmd_wait(args) -> int:
         if time.monotonic() >= deadline:
             break
         time.sleep(args.interval)
+    if args.shell_ready:
+        # The probe timeout IS the signal: a live interactive program swallows
+        # `true` instead of letting bash execute it. Surface it as its own
+        # code so agents can branch (quit key + re-probe) without parsing text.
+        raise TDError("shell-not-ready",
+                      f"shell did not answer the `true` probe within {args.timeout}s",
+                      hint="likely inside an interactive program — inspect "
+                           "evidence.screen, send the program's quit key, then "
+                           "re-probe; if the shell was still starting, retry "
+                           "with a longer --timeout",
+                      evidence=waiting.timeout_evidence(ctx, cond))
     raise TDError("timeout",
                   f"conditions not met within {args.timeout}s",
                   hint=waiting.timeout_hint(cond),
@@ -300,11 +399,11 @@ def cmd_click(args) -> int:
 
 def cmd_screenshot(args) -> int:
     import os
-    if os.environ.get("TERM_DEBUG_DISABLE_IMAGE") == "1":
+    if os.environ.get("TERM_USE_DISABLE_IMAGE") == "1":
         # Blind-test switch: heuristics-only testers get the image channel
         # denied with the same structured error shape as a missing Pillow.
         raise TDError("pillow-missing",
-                      "image channel disabled by TERM_DEBUG_DISABLE_IMAGE=1",
+                      "image channel disabled by TERM_USE_DISABLE_IMAGE=1",
                       hint="this session runs heuristics-only; use the text channels")
     target = resolve_target(args.name, getattr(args, "socket", None))
     text = tmuxio.capture(target, ("-e",))
@@ -325,7 +424,7 @@ def cmd_trace(args) -> int:
     if not path.exists():
         raise TDError("session-missing",
                       f"no raw.log for session {args.name!r}",
-                      hint="run: term-debug start -n <name> --cmd <command>")
+                      hint="run: term-use start -n <name> --cmd <command>")
     with path.open(encoding="utf-8") as fh:
         for line in fh:
             ev = json.loads(line)
@@ -360,7 +459,7 @@ def cmd_trace(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="term-debug",
+        prog="term-use",
         description="Drive and debug interactive terminal programs via tmux (v2).",
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
@@ -387,6 +486,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="key name e.g. Enter Escape C-c (repeatable)")
     p.add_argument("--hex", action="append", metavar="HEX",
                    help="raw byte via send-keys -H e.g. 1c for C-\\ (repeatable)")
+    p.add_argument("--repeat", type=int, default=1, metavar="N",
+                   help="repeat the whole injection N times, each repetition a "
+                        "full independent send (debounced menus, double-key "
+                        "rhythms like Escape Escape / double C-c)")
+    p.add_argument("--delay", type=float, default=0.35, metavar="S",
+                   help="seconds between repetitions (default 0.35 — the gap "
+                        "measured to clear real menu debouncing)")
     p.set_defaults(func=cmd_send)
 
     p = sub.add_parser("wait", help="poll the screen until a regex matches")
@@ -395,6 +501,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--until", default=None, help="regex to wait for")
     p.add_argument("--cmd-done", action="store_true",
                    help="wait for the OSC 133 command-done marker (fact)")
+    p.add_argument("--shell-ready", action="store_true",
+                   help="send a `true` probe and wait until the shell answers "
+                        "(fact); use right after start and to confirm the shell "
+                        "took input back after a nested program — timeout means "
+                        "the shell is NOT ready (the probe was swallowed)")
     p.add_argument("--exit", action="store_true",
                    help="wait for the pane to exit (remain-on-exit, fact)")
     p.add_argument("--quiet-ms", type=int, default=None, metavar="N",
@@ -417,6 +528,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--grid", action="store_true", help="SGR cell grid JSON")
     p.add_argument("--runs", action="store_true", help="attribute run view JSON")
     p.add_argument("--grep", action="store_true", help="print rows matching --fg/--bg/--attr")
+    p.add_argument("--find", default=None, metavar="TEXT",
+                   help="literal text search; JSON matches with 1-based "
+                        "click-ready coords (feed straight into click)")
     p.add_argument("--fg", default=None, metavar="COLOR")
     p.add_argument("--bg", default=None, metavar="COLOR")
     p.add_argument("--attr", action="append", metavar="A", help="e.g. bold, reverse (repeatable)")

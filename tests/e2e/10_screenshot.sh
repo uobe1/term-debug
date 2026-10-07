@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-TD="python3 -m termdebug"
+TD="python3 -m termuse"
 SOCK="td10sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
 export XDG_STATE_HOME="$TMP/state"
@@ -38,7 +38,7 @@ for jf, kind in ((sys.argv[1], "PNG"), (sys.argv[2], "JPEG")):
 PY
 
 # --- pillow-missing: -S skips site-packages, so PIL is importable nowhere ---
-if python3 -S -m termdebug screenshot -n td10 --format png -o "$TMP/s2.png" \
+if python3 -S -m termuse screenshot -n td10 --format png -o "$TMP/s2.png" \
     >/dev/null 2>"$TMP/np.json"; then
   fail "screenshot without Pillow must fail"
 fi

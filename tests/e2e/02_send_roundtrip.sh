@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-TD="python3 -m termdebug"
+TD="python3 -m termuse"
 NAME="td02_$$_$RANDOM"
 SOCK="td02sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
@@ -16,7 +16,7 @@ fail() { echo "E2E-02 FAIL: $*"; exit 1; }
 
 $TD start -n "$NAME" --cmd bash --socket "$SOCK" --width 100 --height 30 >/dev/null \
   || fail "start failed"
-DIR="$XDG_STATE_HOME/term-debug/$NAME"
+DIR="$XDG_STATE_HOME/term-use/$NAME"
 
 get_offset() { python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['last_send_offset'])" "$DIR/state.json"; }
 

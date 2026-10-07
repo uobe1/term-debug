@@ -4,10 +4,18 @@ import json
 # Design doc section 6 — the canonical code table.
 ERROR_CODES = (
     "session-missing",
+    # CLI argument validation failure (--repeat < 1, bad hex, unknown key, ...).
+    "invalid-arguments",
     "socket-unreachable",
     "pane-dead",
     "pane-dead-by-signal",
     "no-shell-integration",
+    # wait on a pane that exists in tmux but has no term-use records
+    # (e.g. nested tmux): screen channels degrade, shell-protocol facts refuse.
+    "unmanaged-pane",
+    # wait --shell-ready: the `true` probe got no OSC 133 answer in time
+    # (a live interactive program swallows the probe, or the shell is slow).
+    "shell-not-ready",
     "expect-code-mismatch",
     "timeout",
     "mouse-not-enabled",
@@ -20,7 +28,7 @@ ERROR_CODES = (
 
 
 class TDError(Exception):
-    """A term-debug failure with a stable machine-readable code."""
+    """A term-use failure with a stable machine-readable code."""
 
     def __init__(self, code: str, message: str, hint: str | None = None,
                  evidence: dict | None = None):

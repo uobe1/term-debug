@@ -1,16 +1,16 @@
-# Installing term-debug
+# Installing term-use
 
-**term-debug** is an evidence-driven CLI that lets coding agents drive and debug
+**term-use** is an evidence-driven CLI that lets coding agents drive and debug
 interactive terminal programs — shells, nano/vim, REPLs, ink/bubbletea TUIs, even
 nested tmux — through tmux. It replaces blind `sleep`s and screen-scraping with
 verdicts backed by evidence.
 
-- Project / source: **https://github.com/uobe1/term-debug**
+- Project / source: **https://github.com/uobe1/term-use**
 - Agent skill manual: `skills/debugging-interactive-terminals/SKILL.md`
 
-term-debug is **two parts**:
+term-use is **two parts**:
 
-1. the **CLI** (`term-debug`) — the tool your agent drives, and
+1. the **CLI** (`term-use`) — the tool your agent drives, and
 2. the **agent skill** (`debugging-interactive-terminals`) — the manual that teaches
    your agent *when and how* to drive it.
 
@@ -33,10 +33,10 @@ tmux -V
 
 No tmux? Install it with the system package manager first (`pkg install tmux` on
 Termux, `apt install tmux` on Debian/Ubuntu, `brew install tmux` on macOS). GNU
-screen is not a substitute — term-debug drives panes through tmux's own
+screen is not a substitute — term-use drives panes through tmux's own
 interfaces (`pipe-pane`, `capture-pane -e`, `send-keys`).
 
-term-debug has **zero Python dependencies**. tmux is an external binary, not a
+term-use has **zero Python dependencies**. tmux is an external binary, not a
 pip package.
 
 ---
@@ -50,8 +50,8 @@ URL.
 Copy one of these prompts and send it to your agent:
 
 ```text
-Read docs/installation.md in the term-debug repo (https://github.com/uobe1/term-debug)
-and install term-debug by following it: install the `term-debug` CLI and the
+Read docs/en/installation.md in the term-use repo (https://github.com/uobe1/term-use)
+and install term-use by following it: install the `term-use` CLI and the
 `debugging-interactive-terminals` skill into my agent. Tell me what you did and where
 each part landed.
 ```
@@ -59,8 +59,8 @@ each part landed.
 If the agent can only fetch URLs (not local files), use the raw link instead:
 
 ```text
-Read https://raw.githubusercontent.com/uobe1/term-debug/main/docs/installation.md and
-install term-debug by following it: install the `term-debug` CLI and the
+Read https://raw.githubusercontent.com/uobe1/term-use/main/docs/en/installation.md and
+install term-use by following it: install the `term-use` CLI and the
 `debugging-interactive-terminals` skill into my agent. Tell me what you did.
 ```
 
@@ -97,36 +97,36 @@ environment is currently active; the local-clone method is for development.
 **uv (recommended)**
 
 ```bash
-uv tool install git+https://github.com/uobe1/term-debug.git
+uv tool install git+https://github.com/uobe1/term-use.git
 ```
 
 For screenshot support, add Pillow to the tool environment:
 
 ```bash
-uv tool install git+https://github.com/uobe1/term-debug.git --with pillow
+uv tool install git+https://github.com/uobe1/term-use.git --with pillow
 ```
 
 **pip**
 
 ```bash
-python3 -m pip install git+https://github.com/uobe1/term-debug.git
+python3 -m pip install git+https://github.com/uobe1/term-use.git
 ```
 
 **From a local clone (development)**
 
 ```bash
-git clone https://github.com/uobe1/term-debug.git
-cd term-debug
+git clone https://github.com/uobe1/term-use.git
+cd term-use
 uv tool install -e .      # editable: source edits take effect immediately
 ```
 
 To run once without installing anything:
 
 ```bash
-uvx --from . term-debug --help
+uvx --from . term-use --help
 ```
 
-If `term-debug --help` is not found after a uv install, uv's tool bin
+If `term-use --help` is not found after a uv install, uv's tool bin
 (`~/.local/bin`) is not on `PATH` — run `uv tool update-shell` or export
 `PATH="$HOME/.local/bin:$PATH"`.
 
@@ -166,7 +166,7 @@ triggers automatically by description — no further setup.
 ### Step 3 — verify
 
 ```bash
-term-debug sessions
+term-use sessions
 # → [] — or a JSON array of existing tmux sessions; both are success
 
 ls ~/.codebuddy/skills/debugging-interactive-terminals/SKILL.md   # skill present
@@ -175,11 +175,11 @@ ls ~/.codebuddy/skills/debugging-interactive-terminals/SKILL.md   # skill presen
 A real end-to-end check that the CLI *and* the method work:
 
 ```bash
-term-debug start -n install-check --cmd bash --width 80 --height 24
-term-debug send  -n install-check --type "echo ok" --key Enter
-term-debug wait  -n install-check --cmd-done --expect-code 0 --timeout 10
+term-use start -n install-check --cmd bash --width 80 --height 24
+term-use send  -n install-check --type "echo ok" --key Enter
+term-use wait  -n install-check --cmd-done --expect-code 0 --timeout 10
 # → {"verdict": "met", "confidence": "fact", "exit_code": 0, ...}
-term-debug stop  -n install-check
+term-use stop  -n install-check
 ```
 
 All five commands must complete without an `{"error": ...}` object on stderr. The
@@ -191,13 +191,13 @@ code came from the shell protocol (OSC 133), not from screen guessing.
 ### Migrating from the old shim layout
 
 Early v2 checkouts exposed a root-level `term_debug.py` shim. It has been removed;
-the package now lives in `src/termdebug/` and runs as `python -m termdebug`. If your
-scripts still call `python3 term_debug.py`, replace the call with `term-debug`
-(installed) or `PYTHONPATH=<repo>/src python3 -m termdebug` (source tree).
+the package now lives in `src/termuse/` and runs as `python -m termuse`. If your
+scripts still call `python3 term_debug.py`, replace the call with `term-use`
+(installed) or `PYTHONPATH=<repo>/src python3 -m termuse` (source tree).
 
 Session data has also moved: it used to live under
-`$XDG_CACHE_HOME/term-debug/` (i.e. `~/.cache/term-debug/`) and now lives under
-`$XDG_STATE_HOME/term-debug/` (i.e. `~/.local/state/term-debug/`) — per the XDG
+`$XDG_CACHE_HOME/term-use/` (i.e. `~/.cache/term-use/`) and now lives under
+`$XDG_STATE_HOME/term-use/` (i.e. `~/.local/state/term-use/`) — per the XDG
 Base Directory spec, recordings and locator state are *logs / current state*, not
 discardable cache. Existing recordings are not migrated or read from the old
 location; copy the directory over manually if you need them.
@@ -205,16 +205,16 @@ location; copy the directory over manually if you need them.
 ## Updating
 
 ```bash
-uv tool upgrade term-debug
+uv tool upgrade term-use
 # or
-python3 -m pip install -U git+https://github.com/uobe1/term-debug.git
+python3 -m pip install -U git+https://github.com/uobe1/term-use.git
 ```
 
 To pin a version while the 2.0.0 alpha line is moving, append a git ref to the
 URL — `@<tag>` or `@<commit>`:
 
 ```bash
-uv tool install git+https://github.com/uobe1/term-debug.git@<commit>
+uv tool install git+https://github.com/uobe1/term-use.git@<commit>
 ```
 
 (No tags have been cut yet; pin a commit if you need stability.)
@@ -225,9 +225,9 @@ refresh it. If you copied it, re-copy from a fresh clone.
 ## Uninstall
 
 ```bash
-uv tool uninstall term-debug
+uv tool uninstall term-use
 # or
-python3 -m pip uninstall term-debug
+python3 -m pip uninstall term-use
 ```
 
 Remove the skill from your agent's skills directory:
@@ -236,12 +236,12 @@ Remove the skill from your agent's skills directory:
 rm -rf ~/.codebuddy/skills/debugging-interactive-terminals
 ```
 
-Recordings under `$XDG_STATE_HOME/term-debug/` are plain files; delete the
+Recordings under `$XDG_STATE_HOME/term-use/` are plain files; delete the
 directory for a full purge.
 
 ## Troubleshooting
 
-### `term-debug: command not found` after uv tool install
+### `term-use: command not found` after uv tool install
 
 uv's tool bin is not on `PATH`. Run `uv tool update-shell` (adds it and applies on
 next login) or export `PATH="$HOME/.local/bin:$PATH"` in the current shell.
@@ -249,7 +249,7 @@ next login) or export `PATH="$HOME/.local/bin:$PATH"` in the current shell.
 ### `{"error":{"code":"pillow-missing",...}}` from `screenshot`
 
 Expected without Pillow — the error is structured, not a crash. Reinstall with
-`--with pillow`, or set `TERM_DEBUG_DISABLE_IMAGE=1` to make the text-only behavior
+`--with pillow`, or set `TERM_USE_DISABLE_IMAGE=1` to make the text-only behavior
 explicit.
 
 ### `{"error":{"code":"no-shell-integration",...}}` from `--cmd-done`
@@ -257,7 +257,23 @@ explicit.
 Normal for non-bash sessions: the OSC 133 markers are injected into bash only. Wait
 with `--until` anchored on the program's own output marker instead.
 
-### Skill not triggering / agent ignores term-debug
+### `{"error":{"code":"shell-not-ready",...}}` from `--shell-ready`
+
+The `true` probe got no answer in time — usually a live interactive program
+swallowed it (that is the signal working as designed: send the program's quit
+key and re-probe). If the shell was genuinely still starting, retry with a
+longer `--timeout`.
+
+### `{"error":{"code":"unmanaged-pane",...}}` from `--cmd-done`
+
+The pane exists in tmux but was not started by term-use (e.g. a nested tmux
+pane) — there is no shell-protocol channel on it. The screen channels
+(`--until`, `--quiet-ms`) still work there with degraded (heuristic) confidence;
+start a managed session (`term-use start -n <name> --cmd bash`) when you need
+facts. If the pane IS a term-use session, your `XDG_STATE_HOME` differs
+between `start` and the later command — keep it stable.
+
+### Skill not triggering / agent ignores term-use
 
 The skill symlink/copy may be in the wrong directory, or the agent session started
 before the skill was added. Confirm
@@ -267,12 +283,12 @@ path for your agent), then restart the agent or open a fresh session.
 ### Sessions "disappear" between commands
 
 `XDG_STATE_HOME` changed between `start` and the later command. Locator and recorder
-state live under `$XDG_STATE_HOME/term-debug/<session>/`; keep that variable stable
+state live under `$XDG_STATE_HOME/term-use/<session>/`; keep that variable stable
 for the whole working session.
 
 ## Getting help
 
-- Issues: https://github.com/uobe1/term-debug/issues
+- Issues: https://github.com/uobe1/term-use/issues
 - Driving patterns for agents: [usage.md](usage.md)
 - Agent skill manual: [SKILL.md](../../skills/debugging-interactive-terminals/SKILL.md)
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Unit tests for termdebug.errors — pure asserts, no pytest."""
+"""Unit tests for termuse.errors — pure asserts, no pytest."""
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.errors import TDError, ERROR_CODES
+from termuse.errors import TDError, ERROR_CODES
 
 
 def test_to_json_shape():
@@ -30,8 +30,9 @@ def test_optional_fields_default_null():
 
 def test_error_code_table():
     expected = {
-        "session-missing", "socket-unreachable", "pane-dead",
-        "pane-dead-by-signal", "no-shell-integration", "expect-code-mismatch",
+        "session-missing", "invalid-arguments", "socket-unreachable",
+        "pane-dead", "pane-dead-by-signal", "no-shell-integration",
+        "shell-not-ready", "unmanaged-pane", "expect-code-mismatch",
         "timeout", "mouse-not-enabled", "tty-echo-broken",
     }
     missing = expected - set(ERROR_CODES)

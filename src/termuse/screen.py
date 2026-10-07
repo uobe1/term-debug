@@ -162,3 +162,23 @@ def cell_at(grid: list[list[dict | None]], x: int, y: int) -> dict:
     if 0 <= y < len(grid) and 0 <= x < len(grid[y]) and grid[y][x] is not None:
         return grid[y][x]
     return {"char": " ", "fg": None, "bg": None, "attrs": [], "x": x, "y": y}
+
+
+def find_text(grid: list[list[dict | None]], needle: str) -> list[dict]:
+    """All literal matches on the visible screen, in reading order.
+
+    Coordinates are 1-based and click-ready (same convention as `click`),
+    so the locate-then-click flow is a single hop instead of hand-counting
+    columns in screen output. Matches stay within one visual row (wrapped
+    lines are separate rows — the agent clicks what it sees).
+    """
+    if not needle:
+        return []
+    out: list[dict] = []
+    for y, row in enumerate(grid):
+        line = "".join((c["char"] if c else " ") for c in row)
+        start = 0
+        while (idx := line.find(needle, start)) != -1:
+            out.append({"text": needle, "x": idx + 1, "y": y + 1})
+            start = idx + 1
+    return out
