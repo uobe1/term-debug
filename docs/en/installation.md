@@ -50,7 +50,7 @@ URL.
 Copy one of these prompts and send it to your agent:
 
 ```text
-Read docs/installation.md in the term-debug repo (https://github.com/uobe1/term-debug)
+Read docs/en/installation.md in the term-debug repo (https://github.com/uobe1/term-debug)
 and install term-debug by following it: install the `term-debug` CLI and the
 `debugging-interactive-terminals` skill into my agent. Tell me what you did and where
 each part landed.
@@ -59,7 +59,7 @@ each part landed.
 If the agent can only fetch URLs (not local files), use the raw link instead:
 
 ```text
-Read https://raw.githubusercontent.com/uobe1/term-debug/main/docs/installation.md and
+Read https://raw.githubusercontent.com/uobe1/term-debug/main/docs/en/installation.md and
 install term-debug by following it: install the `term-debug` CLI and the
 `debugging-interactive-terminals` skill into my agent. Tell me what you did.
 ```
@@ -256,6 +256,22 @@ explicit.
 
 Normal for non-bash sessions: the OSC 133 markers are injected into bash only. Wait
 with `--until` anchored on the program's own output marker instead.
+
+### `{"error":{"code":"shell-not-ready",...}}` from `--shell-ready`
+
+The `true` probe got no answer in time — usually a live interactive program
+swallowed it (that is the signal working as designed: send the program's quit
+key and re-probe). If the shell was genuinely still starting, retry with a
+longer `--timeout`.
+
+### `{"error":{"code":"unmanaged-pane",...}}` from `--cmd-done`
+
+The pane exists in tmux but was not started by term-debug (e.g. a nested tmux
+pane) — there is no shell-protocol channel on it. The screen channels
+(`--until`, `--quiet-ms`) still work there with degraded (heuristic) confidence;
+start a managed session (`term-debug start -n <name> --cmd bash`) when you need
+facts. If the pane IS a term-debug session, your `XDG_STATE_HOME` differs
+between `start` and the later command — keep it stable.
 
 ### Skill not triggering / agent ignores term-debug
 

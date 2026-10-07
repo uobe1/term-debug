@@ -22,13 +22,20 @@ works the same way.
 TD="term-debug"   # or: PYTHONPATH=/path/to/repo/src python3 -m termdebug
 
 $TD start -n demo --cmd bash --width 100 --height 30
+$TD wait  -n demo --shell-ready --timeout 10
 $TD send  -n demo --type "make build" --key Enter
 $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120
 # → {"verdict": "met", "confidence": "fact", "exit_code": 0, ...}
 ```
 
-That is the whole loop: **start → send → wait for fact → act.**
+That is the whole loop: **start → shell-ready → send → wait for fact → act.**
 
+- `--shell-ready` sends a `true` probe and waits until the shell answers (fact).
+  Use it right after `start`: bash's first startup emits a done-marker with no
+  preceding command, so a bare `--cmd-done` there would always time out. After
+  leaving a nested program, the same probe confirms the shell took input back —
+  a live interactive program swallows the probe, and the wait fails with the
+  `shell-not-ready` code instead of pretending.
 - `--cmd-done` scans the pane's raw output stream for OSC 133 markers injected
   into bash; the exit code comes from the shell protocol → confidence `fact`.
 - A wrong `--expect-code` fails **immediately** with `expect-code-mismatch` —
@@ -44,6 +51,7 @@ That is the whole loop: **start → send → wait for fact → act.**
 
 | Situation | Wait with |
 |---|---|
+| Is the shell ready / back in control? | `--shell-ready` — the `true` probe (fact); timeout → `shell-not-ready` |
 | Did the shell command finish? what code? | `--cmd-done [--expect-code N]` — always prefer |
 | Did the program exit or crash? | `--exit [--expect-code N]` (signal name in evidence) |
 | A known output marker appears | `--until 'regex'` (`--scrollback N` extends history) |
@@ -66,7 +74,17 @@ byte per `-H` (tmux 3.x drops multi-byte `-H`), so escape sequences arrive
 contiguously within a single call.
 
 TUI menus **debounce arrow keys**: `send --key Up --key Up` in one call moves
-the selection **once**. Send each arrow as its own call, ~0.35 s apart.
+the selection **once**. Let the tool do the rhythm — each repetition is a full
+independent send with a precise gap:
+
+```bash
+$TD send -n demo --key Up --repeat 3              # 3 arrows, default 0.35s apart
+$TD send -n demo --key C-c --repeat 2 --delay 0.3 # double-key exit rhythm
+```
+
+The default `--delay 0.35` is the gap measured to clear real menu debouncing;
+every repetition is a separate `send-keys` call (never merged — merging is what
+menus eat).
 
 If `send` warns `tty-echo-broken` (your text produced no echo bytes), the
 program mangled the tty — run `fix-tty`.
@@ -86,14 +104,45 @@ off-by-one.
 ```bash
 $TD screen -n demo --meta                          # cursor, modes, history, alt-screen
 $TD screen -n demo --runs                          # SGR attribute runs (token-cheap)
-$TD screen -n demo --grep selected --fg red        # attribute search
+$TD screen -n demo --grep --fg red                 # attribute search (flag, not a text grep)
+$TD screen -n demo --grep --attr reverse           # e.g. locate a menu's highlighted row
+$TD screen -n demo --find "Cancel"                 # literal text → 1-based coords
 $TD screen -n demo --element-at 40 12              # what is this cell?
 $TD screenshot -n demo --format png -o pane.png    # spatial layout (needs Pillow)
 $TD trace -n demo                                  # project raw.log: input/output/sync events
 ```
 
+`screen --find` returns every literal match with **1-based, click-ready**
+coordinates — the locate-then-click flow is a single hop:
+
+```json
+[{"text": "Cancel", "x": 12, "y": 7}]
+```
+
+```bash
+$TD click -n demo 12 7                             # feed the coords straight in
+```
+
 `screen --meta`'s `pane_current_path` is the real cwd; the prompt on screen may
 abbreviate (`~/.../`) — that is the shell's PS1, not a display bug.
+
+### Nested tmux and unmanaged panes
+
+Panes inside a nested tmux are addressable directly by their socket name —
+`sock:sess:win.pane` — and `send` / `screen` / `click` work on them like on any
+pane. A bare session name addresses the default tmux server exactly like plain
+tmux does, so unmanaged sessions there resolve the same way (no `state.json`
+needed). Unmanaged targets are, however, **not managed** by term-debug (no
+`state.json`, no `raw.log`), and waits degrade honestly instead of pretending:
+
+| Wait | On an unmanaged pane |
+|---|---|
+| `--until` | works, screen polling only — echo-suspect detection is impossible, so confidence is capped at `heuristic` and the verdict condition carries `"degraded": "unmanaged"` |
+| `--quiet-ms` | works, screen-stability sampling only (no raw-stream gate) — same `degraded` marker |
+| `--exit` | works — read-only; if the pane's session collapses with it (no remain-on-exit), pane death is still a `fact`: verdict met with `"degraded": "status-unavailable"` (no exit code readable, so drop `--expect-code` there) |
+| `--cmd-done` / `--shell-ready` | refuses with `unmanaged-pane` — there is no shell-protocol channel; start a managed bash session if you need facts |
+
+term-debug never creates record state for unmanaged panes.
 
 ### Reading failures — timeouts are data
 
@@ -101,11 +150,16 @@ Every failure prints **single-line JSON on stderr** with a screen snapshot
 attached:
 
 ```json
-{"error":{"code":"wait-timeout","message":"...","evidence":{"screen":"...","cursor":{"x":1,"y":5},"raw_tail":"..."}}}
+{"error":{"code":"timeout","message":"...","evidence":{"screen":"...","cursor":{"x":1,"y":5},"raw_tail":"..."}}}
 ```
 
 Never swallow it, never paraphrase it away. A timeout does **not** kill the
 target — inspect the snapshot and retry with a better anchor.
+
+Two codes are deliberate signals, not noise: `shell-not-ready` (the `true`
+probe was swallowed — you are probably inside an interactive program; send its
+quit key and re-probe) and `unmanaged-pane` (the target has no term-debug
+records — see the table above).
 
 ## How it works
 
@@ -146,7 +200,10 @@ only — nothing is mocked.
   when possible. A program that *starts* spinning after your input can
   false-settle a large quiet value — wait for the stream to start first.
   **Menus are quiet-hostile**: inside modal pickers use `sleep 0.5-1` +
-  `screen`, not `--quiet-ms`.
+  `screen`, not `--quiet-ms`. Menu arrow keys also debounce: `send --key Up
+  --key Up` in one call moves the selection **once** — use
+  `send --key Up --repeat N --delay S` (each repetition a separate send with a
+  precise gap).
 - **Long typed text wraps** — a ~90-char `--type` wraps on a 100-col pane; a
   `--until` pattern spanning that text must match the *wrapped* screen, or keep
   sent commands short and let the program print the marker.
@@ -165,7 +222,7 @@ only — nothing is mocked.
 
 ```bash
 $TD start -n nano-demo --cmd bash --width 100 --height 30
-$TD wait  -n nano-demo --cmd-done --timeout 10          # shell ready (fact)
+$TD wait  -n nano-demo --shell-ready --timeout 10       # shell ready (fact)
 $TD send  -n nano-demo --type "nano notes.txt" --key Enter
 $TD wait  -n nano-demo --until 'GNU nano' --timeout 15  # TUI is up
 $TD send  -n nano-demo --type "hello from an agent"

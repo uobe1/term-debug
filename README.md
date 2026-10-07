@@ -9,7 +9,7 @@ agent-first, in the spirit of open-source AI-skill projects like
 the agent*, the CLI is the tool interface, and every answer comes with evidence
 attached.
 
-![version](https://img.shields.io/badge/version-2.0.0a1-orange)
+![version](https://img.shields.io/badge/version-2.0.0a3-orange)
 ![python](https://img.shields.io/badge/python-3.14%2B-3776AB?logo=python&logoColor=white)
 ![requires](https://img.shields.io/badge/external%20dep-tmux%203.x-1BB91F)
 ![stars](https://img.shields.io/github/stars/uobe1/term-debug?style=social)
@@ -72,14 +72,17 @@ triggers by description, so your agent just works. Read it standalone:
 
 ```bash
 term-debug start -n demo --cmd bash --width 100 --height 30
+term-debug wait  -n demo --shell-ready --timeout 10
 term-debug send  -n demo --type "make build" --key Enter
 term-debug wait  -n demo --cmd-done --expect-code 0 --timeout 120
 # → {"verdict": "met", "confidence": "fact", "exit_code": 0, ...}
 ```
 
-That's the whole loop: *start → send → wait for fact → act*. The wait engine also
-speaks regex (`--until`), quiet detection (`--quiet-ms`), pane death (`--exit`),
-AND-composition, and SGR mouse (`click X Y`).
+That's the whole loop: *start → shell-ready → send → wait for fact → act*. The
+wait engine also speaks regex (`--until`), quiet detection (`--quiet-ms`), pane
+death (`--exit`), AND-composition, and SGR mouse (`click X Y`); `send` handles
+debounced key rhythms (`--repeat N --delay S`) and `screen --find` turns text
+into 1-based click-ready coordinates.
 
 **Detailed docs:** [docs/en/usage.md](docs/en/usage.md) — the agent-facing usage guide:
 mental model, decision tables, worked examples, common mistakes, red lines.

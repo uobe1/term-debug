@@ -37,7 +37,9 @@ Feature requests are also issues — please describe the scenario you are drivin
 ### e2e-first discipline
 
 - E2E scripts drive **real tmux and real programs through the CLI only** — no mocks,
-  no bypassing the CLI, no editing files the target program owns.
+  no bypassing the CLI, no editing files the target program owns. Helper programs
+  for scenarios that need a scripted target (e.g. a deterministic debouncing menu)
+  live in `tests/fixtures/`.
 - Follow the self-isolation pattern of `tests/e2e/*.sh`: unique tmux socket name per
   run, `XDG_STATE_HOME` pointed at a `mktemp -d` directory, `trap`-based cleanup,
   and always `stop` your sessions.
@@ -49,6 +51,11 @@ Feature requests are also issues — please describe the scenario you are drivin
 - **Confidence taxonomy**: `fact` (OSC 133 / pane death) > `inference` (screen regex)
   > `heuristic` (quiet sampling). Composite wait verdicts take the weakest member's
   confidence. Never let a heuristic masquerade as fact.
+- **Honest degradation**: unmanaged panes (nested tmux — no `state.json`/`raw.log`)
+  get screen-only waits with confidence capped at `heuristic` and a `degraded`
+  marker in the verdict; shell-protocol facts refuse with `unmanaged-pane`. Never
+  silently overclaim evidence that cannot be gathered, and never create record
+  state as a side effect of touching an unmanaged pane.
 - **Injection red lines**: `-l` text and key names are never mixed in one `send-keys`
   call; `--hex` is split one byte per `-H`.
 - **Structured errors**: every failure surfaces as a `TDError` with a code from the
