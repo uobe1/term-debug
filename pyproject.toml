@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "term-debug"
+name = "term-use"
 version = "2.0.0a3"
 description = "Evidence-driven CLI that lets agents drive and debug interactive terminal programs (shells, nano/vim, REPLs, TUIs) through tmux"
 readme = "README.md"
@@ -31,14 +31,14 @@ dependencies = []
 image = ["pillow>=11"]
 
 [project.scripts]
-term-debug = "termdebug.cli:main"
+term-use = "termuse.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/uobe1/term-debug"
-Repository = "https://github.com/uobe1/term-debug"
-Issues = "https://github.com/uobe1/term-debug/issues"
-Documentation = "https://github.com/uobe1/term-debug/tree/main/docs"
+Homepage = "https://github.com/uobe1/term-use"
+Repository = "https://github.com/uobe1/term-use"
+Issues = "https://github.com/uobe1/term-use/issues"
+Documentation = "https://github.com/uobe1/term-use/tree/main/docs"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-packages = ["termdebug"]
+packages = ["termuse"]

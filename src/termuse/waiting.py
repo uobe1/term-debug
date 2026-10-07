@@ -10,8 +10,8 @@ Timeout never kills the target; it returns an evidence snapshot.
 import re
 import time
 
-from termdebug import osc133, records
-from termdebug.errors import TDError
+from termuse import osc133, records
+from termuse.errors import TDError
 
 CONFIDENCE_ORDER = ("fact", "inference", "heuristic")  # strong -> weak
 
@@ -241,7 +241,7 @@ class ExitCondition(Condition):
                 f"pane vanished without remain-on-exit; exit code "
                 f"unavailable (expected {self.expect_code})",
                 hint="drop --expect-code for unmanaged panes, or keep the "
-                     "program in a managed session (term-debug start)")
+                     "program in a managed session (term-use start)")
         self.exit_code = None
         self.degraded = "status-unavailable"
         return True
@@ -259,7 +259,7 @@ class ExitCondition(Condition):
                 raise TDError(
                     "pane-dead-by-signal",
                     f"pane killed by signal {signal}",
-                    hint="respawn with: term-debug start -n <name> --cmd "
+                    hint="respawn with: term-use start -n <name> --cmd "
                          "<command> (then re-run your scenario)",
                     evidence={"signal": signal, "screen": ctx.capture(0)},
                 )
@@ -291,7 +291,7 @@ def pane_dead_error(ctx) -> TDError:
         return TDError(
             "pane-dead-by-signal",
             f"pane killed by signal {signal} while waiting",
-            hint="respawn with: term-debug start -n <name> --cmd <command>",
+            hint="respawn with: term-use start -n <name> --cmd <command>",
             evidence={"signal": signal, "screen": ctx.capture(0)},
         )
     return TDError(

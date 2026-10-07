@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Unit tests for termdebug.errors — pure asserts, no pytest."""
+"""Unit tests for termuse.errors — pure asserts, no pytest."""
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.errors import TDError, ERROR_CODES
+from termuse.errors import TDError, ERROR_CODES
 
 
 def test_to_json_shape():

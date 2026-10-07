@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.screen import color_name, find_text, parse_grid, rows_to_runs
+from termuse.screen import color_name, find_text, parse_grid, rows_to_runs
 
 
 def cells(grid):

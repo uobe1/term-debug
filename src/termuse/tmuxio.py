@@ -12,7 +12,7 @@ following CLI spellings (socket omitted -> default tmux server):
 import subprocess
 from dataclasses import dataclass
 
-from termdebug.errors import TDError
+from termuse.errors import TDError
 
 
 @dataclass(frozen=True)

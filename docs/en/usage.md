@@ -1,7 +1,7 @@
-# Using term-debug
+# Using term-use
 
 Complete guide for driving and debugging interactive terminal programs with
-term-debug. Written for AI agents first — humans debugging a TUI will find it
+term-use. Written for AI agents first — humans debugging a TUI will find it
 works the same way.
 
 ## The three rules
@@ -19,7 +19,7 @@ works the same way.
 ## The basic workflow
 
 ```bash
-TD="term-debug"   # or: PYTHONPATH=/path/to/repo/src python3 -m termdebug
+TD="term-use"   # or: PYTHONPATH=/path/to/repo/src python3 -m termuse
 
 $TD start -n demo --cmd bash --width 100 --height 30
 $TD wait  -n demo --shell-ready --timeout 10
@@ -132,7 +132,7 @@ Panes inside a nested tmux are addressable directly by their socket name —
 `sock:sess:win.pane` — and `send` / `screen` / `click` work on them like on any
 pane. A bare session name addresses the default tmux server exactly like plain
 tmux does, so unmanaged sessions there resolve the same way (no `state.json`
-needed). Unmanaged targets are, however, **not managed** by term-debug (no
+needed). Unmanaged targets are, however, **not managed** by term-use (no
 `state.json`, no `raw.log`), and waits degrade honestly instead of pretending:
 
 | Wait | On an unmanaged pane |
@@ -142,7 +142,7 @@ needed). Unmanaged targets are, however, **not managed** by term-debug (no
 | `--exit` | works — read-only; if the pane's session collapses with it (no remain-on-exit), pane death is still a `fact`: verdict met with `"degraded": "status-unavailable"` (no exit code readable, so drop `--expect-code` there) |
 | `--cmd-done` / `--shell-ready` | refuses with `unmanaged-pane` — there is no shell-protocol channel; start a managed bash session if you need facts |
 
-term-debug never creates record state for unmanaged panes.
+term-use never creates record state for unmanaged panes.
 
 ### Reading failures — timeouts are data
 
@@ -158,19 +158,19 @@ target — inspect the snapshot and retry with a better anchor.
 
 Two codes are deliberate signals, not noise: `shell-not-ready` (the `true`
 probe was swallowed — you are probably inside an interactive program; send its
-quit key and re-probe) and `unmanaged-pane` (the target has no term-debug
+quit key and re-probe) and `unmanaged-pane` (the target has no term-use
 records — see the table above).
 
 ## How it works
 
 ```
-agent → term-debug CLI (stateless client) → tmux server → pane (target program)
+agent → term-use CLI (stateless client) → tmux server → pane (target program)
                                                └→ pipe.py (recorder sink, one per pane)
 ```
 
 The CLI is a short-lived, stateless client with zero resident memory; the tmux
 server owns PTYs/sessions. All state lives on disk under
-`$XDG_STATE_HOME/term-debug/<session>/`:
+`$XDG_STATE_HOME/term-use/<session>/`:
 
 - **`raw.log`** — asciicast v2 evidence store (`o` pane output, `i` injections,
   `r` resize, `m` sync points). The ground truth for protocol-level bytes.
@@ -235,6 +235,6 @@ $TD stop  -n nano-demo
 
 ## Getting help
 
-- Issues: https://github.com/uobe1/term-debug/issues
+- Issues: https://github.com/uobe1/term-use/issues
 - Install problems: [installation.md](installation.md)
 - Full scenario library: [SKILL.md](../../skills/debugging-interactive-terminals/SKILL.md)

@@ -8,7 +8,7 @@ description: Use when debugging, driving, or reproducing issues in interactive t
 ## Overview
 
 Interactive programs own a screen and react to keystrokes; stdout capture and blind `sleep`
-both fail. term-debug v2 drives them through tmux and replaces guessing with **evidence**:
+both fail. term-use v2 drives them through tmux and replaces guessing with **evidence**:
 every wait returns a verdict with a confidence level, every failure returns structured JSON
 with a screen snapshot attached. The skill teaches a **method for unfamiliar programs** —
 observe, derive anchors from what the program actually paints, confirm with probes — not a
@@ -26,14 +26,14 @@ table of pre-known screens.
    layout questions ("what does the frame look like", "where is the dialog box drawn") →
    `screenshot`. You may alternate freely.
 
-CLI: `term-debug` (after install) or `PYTHONPATH=<repo>/src python3 -m termdebug` (only external dependency: tmux).
+CLI: `term-use` (after install) or `PYTHONPATH=<repo>/src python3 -m termuse` (only external dependency: tmux).
 
 ## Quick Reference
 
 | Command | Purpose |
 |---------|---------|
 | `start -n N --cmd bash --width W --height H` | create session (+ v2 recording; bash gets OSC 133 integration) |
-| `send -n N --type "text" --key Enter [--repeat N --delay S]` | inject input; ONE CLI call may carry both — term-debug internally issues separate tmux send-keys calls (text and key names mixed in one tmux call silently drop keys); keys use tmux names (`Enter Escape C-c C-o`). `--repeat N` repeats the whole injection as N independent sends, `--delay S` between them (default 0.35) — debounced menus, double-key rhythms |
+| `send -n N --type "text" --key Enter [--repeat N --delay S]` | inject input; ONE CLI call may carry both — term-use internally issues separate tmux send-keys calls (text and key names mixed in one tmux call silently drop keys); keys use tmux names (`Enter Escape C-c C-o`). `--repeat N` repeats the whole injection as N independent sends, `--delay S` between them (default 0.35) — debounced menus, double-key rhythms |
 | `screen -n N [--meta] [-N] [-J] [--grid] [--runs] [--grep --attr A] [--find TEXT] [--element-at X Y]` | text channel: status, trailing spaces, join, SGR cell grid, runs, **attribute row filter** (`--grep` takes NO text pattern — rows matching `--fg`/`--bg`/`--attr`; pipe plain `screen` output to grep for text), **literal text finder** (`--find` → 1-based click-ready coords, feed into `click`), cell lookup |
 | `wait -n N --cmd-done [--expect-code 0]` | **command finished + exit code (fact)** — a bare call right after `start` always times out (bash's first marker reads as aborted): probe with `--shell-ready` first, see the standard loop below |
 | `wait -n N --shell-ready [--timeout S]` | CLI sends the `true` probe itself and waits for the shell's OSC 133 answer (fact); use right after `start` and after leaving a nested program; timeout → `shell-not-ready` error |
@@ -58,7 +58,7 @@ accepts tmux key names only and errors with a table of them if you try a letter.
 ## Confirming a command finished (the standard loop)
 
 ```bash
-TD="term-debug"   # or: PYTHONPATH=$REPO/src python3 -m termdebug
+TD="term-use"   # or: PYTHONPATH=$REPO/src python3 -m termuse
 $TD start -n demo --cmd bash --width 100 --height 30
 $TD wait  -n demo --shell-ready --timeout 10    # probe: shell is ready (fact)
 $TD send  -n demo --type "make build" --key Enter
@@ -149,22 +149,22 @@ $TD wait  -n demo --cmd-done --expect-code 0 --timeout 120   # fact: exit code 0
 - **Long typed text wraps**: a ~90-char `--type` wraps on a 100-col pane (the on-screen
   echo breaks mid-word); a `--until` pattern spanning that text must match the *wrapped*
   screen — or keep sent commands short and let the program print the marker. Note
-  `evidence.screen` shows the prompt verbatim: `~/.../` is the shell's PS1, not term-debug;
+  `evidence.screen` shows the prompt verbatim: `~/.../` is the shell's PS1, not term-use;
   use `screen --meta`'s `pane_current_path` for the real cwd.
 - **Leaking sessions**: always `stop` (or `tmux kill-server` in test cleanup). Stopping the
   last session kills the whole tmux server, taking nested sessions with it.
 
 ## Nested tmux
 
-A tmux client running *inside* a term-debug pane is directly drivable — with three
+A tmux client running *inside* a term-use pane is directly drivable — with three
 measured gotchas:
 
 1. **`$TMUX` blocks the nested client** — tmux refuses to start ("sessions should be nested
    with care, unset $TMUX to force"). Run `unset TMUX; tmux new-session -s inner ...`.
 2. **Address inner panes by socket name**: the default socket's name is literally
    `default` — `screen -n default:inner:0.0` works; a bare `-n inner` does NOT (it looks
-   for a term-debug-managed session and fails with `session-missing`).
-3. **wait on unmanaged panes** (term-debug didn't start them): `--until`/`--quiet-ms`
+   for a term-use-managed session and fails with `session-missing`).
+3. **wait on unmanaged panes** (term-use didn't start them): `--until`/`--quiet-ms`
    work with degraded confidence — capped at `heuristic`, condition JSON carries
    `"degraded": "unmanaged"`, and raw-stream echo detection is off (anchor on output
    that isn't a substring of your input). `--cmd-done`/`--shell-ready` refuse with
@@ -194,7 +194,7 @@ Work in this order — observe before you anchor, anchor before you drive:
      belongs to bash → `--exit` never fires; "did it exit?" is confirmed with
      `wait --shell-ready` (a live interactive program swallows the probe instead of
      letting bash execute it, so it fails with `shell-not-ready` until the program
-     quits). **Do NOT probe with `pgrep`** — term-debug's own recorder is a python3
+     quits). **Do NOT probe with `pgrep`** — term-use's own recorder is a python3
      process, so a process count is never 0 (measured: 4 in a bare session).
    - *REPL* (prompt + eval): the prompt is the anchor; results are verified by reading
      `screen -J | grep`, never by waiting on a substring of what you sent.

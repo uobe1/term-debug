@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.cli import build_parser
-from termdebug.errors import ERROR_CODES
+from termuse.cli import build_parser
+from termuse.errors import ERROR_CODES
 
 
 def test_send_repeat_defaults():

@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-TD="python3 -m termdebug"
+TD="python3 -m termuse"
 SOCK="td11sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
 export XDG_STATE_HOME="$TMP/state"
@@ -57,7 +57,7 @@ v = json.load(sys.stdin)
 c = v["conditions"][0]
 assert c["type"] == "quiet" and c["degraded"] == "unmanaged", v
 ' || fail "unmanaged --quiet-ms should settle via screen stability"
-[ ! -d "$XDG_STATE_HOME/term-debug/inner" ] \
+[ ! -d "$XDG_STATE_HOME/term-use/inner" ] \
   || fail "unmanaged wait must not create a state dir for the inner session"
 
 if $TD wait -n "inner:inner:0" --cmd-done --timeout 3 >/dev/null 2>"$TMP/um.json"; then
@@ -67,7 +67,7 @@ python3 -c "
 import json,sys
 e=json.load(open('$TMP/um.json'))['error']
 assert e['code']=='unmanaged-pane', e
-assert 'not managed by term-debug' in e['message'], e
+assert 'not managed by term-use' in e['message'], e
 " || fail "expected unmanaged-pane error for --cmd-done"
 
 # --- unmanaged --exit: session collapse = pane gone (fact met, status unavailable) ---

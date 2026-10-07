@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.errors import TDError
-from termdebug.waiting import (AllOf, QuietCondition, UntilRegex, WaitContext,
+from termuse.errors import TDError
+from termuse.waiting import (AllOf, QuietCondition, UntilRegex, WaitContext,
                                timeout_evidence, timeout_hint)
 
 
@@ -103,7 +103,7 @@ def test_allof_capped_by_unmanaged_member():
 
 
 def test_quiet_unmanaged_screen_only_no_side_effects():
-    from termdebug import records
+    from termuse import records
     session = "td-unit-unmanaged-quiet"
     q = QuietCondition(session, 400, managed=False)
     assert q.confidence == "heuristic" and q.degraded == "unmanaged"
@@ -150,7 +150,7 @@ def _missing_session():
 def test_exit_unmanaged_collapse_is_fact_met():
     # Unmanaged pane, no remain-on-exit: the session collapses with the pane.
     # Pane death is still a tmux protocol fact — meet, status unreadable.
-    from termdebug.waiting import ExitCondition
+    from termuse.waiting import ExitCondition
     ex = ExitCondition(managed=False)
     assert ex.evaluate(_exit_ctx(_missing_session)) is True
     assert ex.confidence == "fact" and ex.degraded == "status-unavailable"
@@ -159,7 +159,7 @@ def test_exit_unmanaged_collapse_is_fact_met():
 
 
 def test_exit_managed_meta_failure_still_raises():
-    from termdebug.waiting import ExitCondition
+    from termuse.waiting import ExitCondition
     ex = ExitCondition(managed=True)
     try:
         ex.evaluate(_exit_ctx(_missing_session))
@@ -170,7 +170,7 @@ def test_exit_managed_meta_failure_still_raises():
 
 
 def test_exit_unmanaged_collapse_with_expect_code_fails():
-    from termdebug.waiting import ExitCondition
+    from termuse.waiting import ExitCondition
     ex = ExitCondition(expect_code=0, managed=False)
     try:
         ex.evaluate(_exit_ctx(_missing_session))
@@ -183,7 +183,7 @@ def test_exit_unmanaged_collapse_with_expect_code_fails():
 def test_exit_unmanaged_vanish_empty_meta_is_met():
     # tmux answers a vanished pane target with rc=0 and EMPTY format fields
     # (no error): pane_dead=None, pane_width=None. That is the collapse.
-    from termdebug.waiting import ExitCondition
+    from termuse.waiting import ExitCondition
     ex = ExitCondition(managed=False)
     empty = lambda: {"pane_dead": None, "pane_width": None, "cursor_x": None,
                      "pane_dead_status": None}
@@ -192,7 +192,7 @@ def test_exit_unmanaged_vanish_empty_meta_is_met():
 
 
 def test_exit_unmanaged_alive_pane_keeps_waiting():
-    from termdebug.waiting import ExitCondition
+    from termuse.waiting import ExitCondition
     ex = ExitCondition(managed=False)
     assert not ex.evaluate(
         _exit_ctx(lambda: {"pane_dead": False, "pane_width": 80,
@@ -201,7 +201,7 @@ def test_exit_unmanaged_alive_pane_keeps_waiting():
 
 def test_exit_unmanaged_dead_pane_still_reports_status():
     # Session survived (multi-window or remain-on-exit): full status available.
-    from termdebug.waiting import ExitCondition
+    from termuse.waiting import ExitCondition
     ex = ExitCondition(expect_code=3, managed=False)
     meta = lambda: {"pane_dead": True, "pane_dead_signal": None,
                     "pane_dead_status": 3}

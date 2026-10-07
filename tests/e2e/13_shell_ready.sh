@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-TD="python3 -m termdebug"
+TD="python3 -m termuse"
 NAME="td13_$$_$RANDOM"
 SOCK="td13sock_$$_$RANDOM"
 TMP="$(mktemp -d)"

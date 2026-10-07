@@ -1,4 +1,4 @@
-# Contributing to term-debug
+# Contributing to term-use
 
 Thanks for your interest in contributing! Bug reports, documentation and code are all
 welcome. The workflow is **issues + pull requests**: direct pushes to `main` are
@@ -6,9 +6,9 @@ blocked by a branch ruleset, so all changes — including small ones — arrive 
 
 ## Reporting bugs
 
-Open a [GitHub issue](https://github.com/uobe1/term-debug/issues) and include:
+Open a [GitHub issue](https://github.com/uobe1/term-use/issues) and include:
 
-1. **The structured error JSON** — term-debug prints every failure as single-line JSON
+1. **The structured error JSON** — term-use prints every failure as single-line JSON
    with an evidence snapshot attached. Paste it verbatim; it is designed for this.
 2. `tmux -V`, `python3 --version`, OS/terminal.
 3. A minimal reproduction: the exact `start` / `send` / `wait` / `screen` commands.
@@ -22,12 +22,12 @@ Feature requests are also issues — please describe the scenario you are drivin
 
 0. **Local setup** — the source tree runs without any install step:
    ```bash
-   PYTHONPATH=src python3 -m termdebug --help      # run from a source checkout
-   uv tool install -e .                            # or get the `term-debug` command
+   PYTHONPATH=src python3 -m termuse --help      # run from a source checkout
+   uv tool install -e .                            # or get the `term-use` command
    ```
    Unit tests and E2E scripts manage `sys.path` / `PYTHONPATH` themselves; E2E
    isolation (socket name, `XDG_STATE_HOME`) is automatic — never point them at
-   your real `~/.local/state/term-debug/`.
+   your real `~/.local/state/term-use/`.
 1. Fork / create a feature branch from `main`.
 2. Write the **failing E2E test first** (see discipline below).
 3. Implement the minimal change until it goes green.
@@ -59,7 +59,7 @@ Feature requests are also issues — please describe the scenario you are drivin
 - **Injection red lines**: `-l` text and key names are never mixed in one `send-keys`
   call; `--hex` is split one byte per `-H`.
 - **Structured errors**: every failure surfaces as a `TDError` with a code from the
-  fixed table in `termdebug/errors.py`, as single-line JSON on stderr with exit code 1.
+  fixed table in `termuse/errors.py`, as single-line JSON on stderr with exit code 1.
   Timeouts return an evidence snapshot and never kill the target.
 - **Atomic state**: `state.json` is always written via tmp + rename;
   `last_send_offset` is a byte offset into `raw.log`, never a timestamp.
@@ -102,6 +102,6 @@ One logical change per commit; the commit message should say *why*, the diff say
 
 ## Licensing
 
-term-debug is licensed under the **GNU General Public License v3.0 or later**
+term-use is licensed under the **GNU General Public License v3.0 or later**
 (`GPL-3.0-or-later`), see [LICENSE](LICENSE). By opening a PR you agree that your
 contribution is licensed under the same license (GPL-3.0-or-later).

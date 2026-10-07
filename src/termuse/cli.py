@@ -1,7 +1,7 @@
-"""term-debug v2 CLI: evidence-driven driving/debugging of interactive terminals.
+"""term-use v2 CLI: evidence-driven driving/debugging of interactive terminals.
 
 Client process is stateless and short-lived; tmux server is the service.
-All failures surface as single-line JSON errors (termdebug.errors.TDError).
+All failures surface as single-line JSON errors (termuse.errors.TDError).
 """
 import argparse
 import json
@@ -11,11 +11,11 @@ import sys
 import time
 from pathlib import Path
 
-from termdebug import input as tdinput
-from termdebug import rcfile, records, screen as tdscreen
-from termdebug import screenshot as tdscreenshot
-from termdebug import tmuxio, waiting
-from termdebug.errors import TDError
+from termuse import input as tdinput
+from termuse import rcfile, records, screen as tdscreen
+from termuse import screenshot as tdscreenshot
+from termuse import tmuxio, waiting
+from termuse.errors import TDError
 
 PIPE_SCRIPT = Path(__file__).resolve().parent / "pipe.py"
 
@@ -24,9 +24,9 @@ def resolve_target(name: str, socket: str | None = None) -> tmuxio.Target:
     """Resolve a CLI -n argument to a full target; socket falls back to state.json.
 
     An explicit socket in the target (inner:inner:0) wins — nested tmux panes
-    are addressable without being term-debug-managed. A bare name addresses
+    are addressable without being term-use-managed. A bare name addresses
     the default server like plain tmux would: if the session exists there
-    without term-debug records, it is returned unmanaged (waits degrade)
+    without term-use records, it is returned unmanaged (waits degrade)
     instead of refusing; state.json remains the fallback for sessions on
     custom sockets.
     """
@@ -245,20 +245,20 @@ def require_shell_integration(target: tmuxio.Target, state: dict | None) -> dict
         if exists:
             raise TDError(
                 "unmanaged-pane",
-                f"pane {target.to_arg()!r} is not managed by term-debug "
+                f"pane {target.to_arg()!r} is not managed by term-use "
                 f"(no state.json)",
                 hint="shell-protocol facts (--cmd-done/--shell-ready) need a "
-                     "session started with: term-debug start -n <name> --cmd "
+                     "session started with: term-use start -n <name> --cmd "
                      "bash; the screen channels (--until/--quiet-ms) still "
                      "work here with degraded (heuristic) confidence. If this "
-                     "IS a term-debug session, XDG_STATE_HOME differs between "
+                     "IS a term-use session, XDG_STATE_HOME differs between "
                      "start and wait.")
         raise TDError(
             "session-missing",
             f"no tmux session {target.session!r} and no state.json for it",
             hint=f"expected state under {records.state_root()} — keep "
                  f"XDG_STATE_HOME consistent between start and wait, or "
-                 f"start with: term-debug start -n {target.session} --cmd bash")
+                 f"start with: term-use start -n {target.session} --cmd bash")
     if not state.get("shell_integration"):
         raise TDError("no-shell-integration",
                       f"session {target.session!r} has no OSC 133 injection",
@@ -309,7 +309,7 @@ def cmd_wait(args) -> int:
                     f"no pane {args.name!r} (session exists but the pane "
                     f"target is empty, or the session is gone)",
                     hint="check the locator spelling [socket:]session:win.pane; "
-                         "list candidates with: term-debug sessions --socket "
+                         "list candidates with: term-use sessions --socket "
                          "<socket>")
         conditions.append(waiting.ExitCondition(args.expect_code, managed=managed))
     if args.quiet_ms is not None:
@@ -399,11 +399,11 @@ def cmd_click(args) -> int:
 
 def cmd_screenshot(args) -> int:
     import os
-    if os.environ.get("TERM_DEBUG_DISABLE_IMAGE") == "1":
+    if os.environ.get("TERM_USE_DISABLE_IMAGE") == "1":
         # Blind-test switch: heuristics-only testers get the image channel
         # denied with the same structured error shape as a missing Pillow.
         raise TDError("pillow-missing",
-                      "image channel disabled by TERM_DEBUG_DISABLE_IMAGE=1",
+                      "image channel disabled by TERM_USE_DISABLE_IMAGE=1",
                       hint="this session runs heuristics-only; use the text channels")
     target = resolve_target(args.name, getattr(args, "socket", None))
     text = tmuxio.capture(target, ("-e",))
@@ -424,7 +424,7 @@ def cmd_trace(args) -> int:
     if not path.exists():
         raise TDError("session-missing",
                       f"no raw.log for session {args.name!r}",
-                      hint="run: term-debug start -n <name> --cmd <command>")
+                      hint="run: term-use start -n <name> --cmd <command>")
     with path.open(encoding="utf-8") as fh:
         for line in fh:
             ev = json.loads(line)
@@ -459,7 +459,7 @@ def cmd_trace(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="term-debug",
+        prog="term-use",
         description="Drive and debug interactive terminal programs via tmux (v2).",
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")

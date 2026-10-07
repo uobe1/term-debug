@@ -5,9 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug import waiting
-from termdebug.errors import TDError
-from termdebug.waiting import ShellReady, UntilRegex, WaitContext
+from termuse import waiting
+from termuse.errors import TDError
+from termuse.waiting import ShellReady, UntilRegex, WaitContext
 
 
 def ctx_with(screen: str) -> WaitContext:

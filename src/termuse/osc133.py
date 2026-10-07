@@ -12,7 +12,7 @@ escape sequences (CSI, other OSCs) so their payloads can never be mistaken
 for markers. Works on the decoded text of raw.log o-events (ESC survives
 UTF-8 decoding as \\x1b).
 """
-from termdebug.errors import TDError
+from termuse.errors import TDError
 
 
 class OSC133Scanner:

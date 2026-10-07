@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from termdebug.osc133 import OSC133Scanner
+from termuse.osc133 import OSC133Scanner
 
 
 def kinds(events):

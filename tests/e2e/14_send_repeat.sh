@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-TD="python3 -m termdebug"
+TD="python3 -m termuse"
 NAME="td14_$$_$RANDOM"
 SOCK="td14sock_$$_$RANDOM"
 TMP="$(mktemp -d)"
@@ -30,11 +30,11 @@ sleep 1
 [ "$(selected)" = "SELECTED:1" ] || fail "one-call two Ups should move once, got: $(selected)"
 
 # --- --repeat 2 --delay 0.6: each repetition is a full independent send ---
-BEFORE="$(grep -o '"key": "Up"' "$XDG_STATE_HOME/term-debug/$NAME/raw.log" | wc -l)"
+BEFORE="$(grep -o '"key": "Up"' "$XDG_STATE_HOME/term-use/$NAME/raw.log" | wc -l)"
 $TD send -n "$NAME" --key Up --repeat 2 --delay 0.6 >/dev/null || fail "send --repeat failed"
 sleep 2
 [ "$(selected)" = "SELECTED:3" ] || fail "--repeat 2 --delay 0.6 should move twice, got: $(selected)"
-AFTER="$(grep -o '"key": "Up"' "$XDG_STATE_HOME/term-debug/$NAME/raw.log" | wc -l)"
+AFTER="$(grep -o '"key": "Up"' "$XDG_STATE_HOME/term-use/$NAME/raw.log" | wc -l)"
 [ "$((AFTER - BEFORE))" -eq 2 ] || fail "expected 2 i-event Up records, got $((AFTER - BEFORE))"
 
 # --- red line: each repetition must stay text/key separated (works at all) ---

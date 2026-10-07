@@ -6,8 +6,8 @@ one send-keys invocation — mixing them silently drops keys.
 import re
 import time
 
-from termdebug import records, tmuxio
-from termdebug.errors import TDError
+from termuse import records, tmuxio
+from termuse.errors import TDError
 
 # DECSET/DECRST: ESC [ ? <mode>[;<mode>...] h (set) / l (reset).
 _DECSET = re.compile("\x1b\\[\\?(\\d+(?:;\\d+)*)([hl])")
